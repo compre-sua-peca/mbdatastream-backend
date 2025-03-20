@@ -123,23 +123,22 @@ def process_excel(file_path):
 
                 """ Database Insertion Logic """
                 # Create the categories
-                if category_name not in created_categories:
-                    category_hash = generate_category_hash(category_name)
-                    
-                    category = Category(
-                        hash_category=category_hash,
-                        name_category=category_name
-                    )
-                    
-                    print(category_hash)
-
-                    db.session.add(category)
-                    db.session.flush()
-                    
-                    created_categories[category_name] = category_hash
-                    results["categories_created"] += 1
-                else:
+                if category_name in created_categories:
                     category_hash = created_categories[category_name]
+                else:
+                    existing_category = Category.query.filter_by(name_category=category_name).first()
+                    if existing_category:
+                        category_hash = existing_category.hash_category
+                    else:
+                        category_hash = generate_category_hash(category_name)
+                        category = Category(
+                            hash_category=category_hash,
+                            name_category=category_name
+                        )
+                        db.session.add(category)
+                        db.session.flush()
+                        results["categories_created"] += 1
+                    created_categories[category_name] = category_hash
 
                 # Create product object (without adding to database)
                 product = Product(**product_dict, hash_category=category_hash)
@@ -181,10 +180,10 @@ def process_excel(file_path):
                     
                     if not existing_compat:
                         db.session.add(compatibility)
+                        
+                        results["compatibilities_created"] += 1
 
                     db.session.commit()
-
-                    results["compatibilities_created"] += 1
 
             except Exception as e:
                 db.session.rollback()
