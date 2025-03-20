@@ -14,8 +14,8 @@ class Product(db.Model):
     name_product = db.Column(db.String(255), nullable=False)
     bar_code = db.Column(db.BigInteger, nullable=False)
     gear_quantity = db.Column(db.Integer, nullable=False)
-    gear_dimenions = db.Column(db.String(255), nullable=False)
-    cross_reference = db.Column(db.String(255), nullable=False)
+    gear_dimensions = db.Column(db.String(255), nullable=True)
+    cross_reference = db.Column(db.String(2500), nullable=True)
     hash_category = db.Column(db.String(255), db.ForeignKey('category.hash_category'), nullable=False)
     
     images = db.relationship('Images', backref='product', lazy=True)
@@ -34,7 +34,7 @@ class Images(db.Model):
 class Vehicle(db.Model):
     vehicle_name = db.Column(db.String(255), primary_key=True)
     start_year = db.Column(db.String(4), nullable=False)
-    end_year = db.Column(db.String(4), nullable=False)
+    end_year = db.Column(db.String(4), nullable=True)
     vehicle_type = db.Column(db.String(255), nullable=False)
     
     compatibilities = db.relationship('Compatibility', backref='vehicle', lazy=True)

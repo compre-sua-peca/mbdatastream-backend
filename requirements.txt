@@ -4,3 +4,4 @@ flask-migrate
 pymysql
 psycopg2
 dotenv
+pandas

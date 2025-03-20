@@ -2,9 +2,6 @@ from flask import Flask
 from config.settings import Config
 from app.extensions import db, migrate
 from app.routes import register_routes
-from dotenv import load_dotenv
-
-load_dotenv()
 
 def create_app(config_class=Config):
     """Application factory pattern"""
