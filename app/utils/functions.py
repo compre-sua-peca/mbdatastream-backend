@@ -1,7 +1,17 @@
 import pandas as pd
+import boto3
+import os
 from datetime import datetime
+import asyncio
+import concurrent.futures
 from app.models import Category, Product, Vehicle, Compatibility
 from app.extensions import db
+from sqlalchemy.future import select
+from sqlalchemy.exc import IntegrityError
+from flask import current_app
+from botocore.exceptions import NoCredentialsError
+
+# Helper functions remain the same
 
 
 def extract_compat_to_list(compat_str):
@@ -9,29 +19,24 @@ def extract_compat_to_list(compat_str):
         return []
 
     trimmed = compat_str.strip("[]")
-
     if not trimmed:
         return []
 
     items = trimmed.split(";")
-    # Remove both outer quotes and whitespace
     vehicles = [item.strip().strip("'").strip() for item in items]
-
     return vehicles
 
 
 def generate_category_hash(category_name):
-    # Process category
     now = datetime.now()
     dt_string = now.strftime("%d%m%Y%H%M%S")
-    
-    # Simple hash function
     category_hash = f"{category_name}-{dt_string}"
-    
     return category_hash
 
+# Asynchronous processing function
 
-def process_excel(file_path):
+
+async def _process_excel_async(file_path, batch_size):
     try:
         # Read the Excel file
         df = pd.read_excel(file_path)
@@ -42,10 +47,9 @@ def process_excel(file_path):
             "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE"
         ]
 
-        # Convert column names to uppercase for case-insensitive matching
+        # Convert column names to uppercase
         df.columns = [col.upper() for col in df.columns]
-
-        print(df.columns)
+        print(f"Found columns: {df.columns}")
 
         # Check for missing columns
         missing_columns = [
@@ -61,138 +65,237 @@ def process_excel(file_path):
             "products_created": 0,
             "vehicles_created": 0,
             "compatibilities_created": 0,
-            "images_created": 0,
             "errors": []
         }
 
-        products = []
+        # Process batches for better performance
+        total_rows = len(df)
+        batches = [df[i:i+batch_size]
+                   for i in range(0, total_rows, batch_size)]
+        
+        print(batches)
 
+        # Store created categories and vehicles across batches
         created_categories = {}
         created_vehicles = {}
 
-        # Process each row
-        for index, row in df.iterrows():
-            try:
-                """ Data Processing Logic """
-                category_name = row["CATEGORY"]
+        for batch_idx, batch_df in enumerate(batches):
+            print(f"Processing batch {batch_idx+1}/{len(batches)}")
 
-                # Convert product to dictionary for JSON serialization
-                product_dict = {
-                    "cod_product": row["COD_PRODUCT"],
-                    "name_product": row["NAME_PRODUCT"],
-                    "bar_code": row["BAR_CODE"],
-                    "gear_quantity": None if pd.isna(row["GEAR_QUANTITY"]) else row["GEAR_QUANTITY"],
-                    "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
-                    "cross_reference": None if pd.isna(row["CROSS_REF"]) else row["CROSS_REF"],
-                    # "image": row["IMAGE"]
-                }
-
-                # Store the values in string variables
-                vehicles_names_string = row["COMPATIBILITY"]
-                start_year_string = row["START_YEAR"]
-                end_year_string = row["END_YEAR"]
-                vehicle_type_string = row["TYPE_VEICULO"]
-
-                # Extract the values from the strings to lists
-                vehicles_names_list = extract_compat_to_list(
-                    vehicles_names_string)
-                start_year_list = extract_compat_to_list(start_year_string)
-                end_year_list = extract_compat_to_list(end_year_string)
-                vehicle_type_list = extract_compat_to_list(vehicle_type_string)
-
-                res_vehicles_list = []
-                compatibility_list = []
-
-                compat_qtd = len(vehicles_names_list)
-
-                for range_qtd in range(compat_qtd):
-                    vehicle = {
-                        "vehicle_name": vehicles_names_list[range_qtd],
-                        "start_year": start_year_list[range_qtd],
-                        "end_year": end_year_list[range_qtd] if end_year_list[range_qtd] != "Desconhecido" and end_year_list[range_qtd] != "Desconhecido." else None,
-                        "type_vehicle": vehicle_type_list[range_qtd]
-                    }
-
-                    compatibility_dict = {
-                        "cod_product": product_dict["cod_product"],
-                        "vehicles": vehicles_names_list[range_qtd]
-                    }
-
-                    res_vehicles_list.append(vehicle)
-                    compatibility_list.append(compatibility_dict)
-
-                """ Database Insertion Logic """
-                # Create the categories
-                if category_name in created_categories:
-                    category_hash = created_categories[category_name]
-                else:
-                    existing_category = Category.query.filter_by(name_category=category_name).first()
-                    if existing_category:
-                        category_hash = existing_category.hash_category
-                    else:
-                        category_hash = generate_category_hash(category_name)
-                        category = Category(
-                            hash_category=category_hash,
-                            name_category=category_name
-                        )
-                        db.session.add(category)
-                        db.session.flush()
-                        results["categories_created"] += 1
-                    created_categories[category_name] = category_hash
-
-                # Create product object (without adding to database)
-                product = Product(**product_dict, hash_category=category_hash)
-
-                with db.session.no_autoflush:
-                    existing_product = Product.query.filter_by(
-                        cod_product=product.cod_product).first()
-
-                if not existing_product:
-                    db.session.add(product)
-                    results["products_created"] += 1
-
-                for vehicle_dict in res_vehicles_list:
-                    if not vehicle_dict:
-                        continue
-
-                    vehicle_name = vehicle_dict["vehicle_name"]
-                    vehicle = Vehicle.query.get(vehicle_name)
-
-                    if not vehicle:
-                        vehicle = Vehicle(
-                            vehicle_name=vehicle_dict["vehicle_name"].strip(),
-                            start_year=vehicle_dict["start_year"].strip(),
-                            end_year=vehicle_dict["end_year"].strip() if vehicle_dict["end_year"] else None,
-                            vehicle_type=vehicle_dict["type_vehicle"].strip()
-                        )
-
-                        db.session.add(vehicle)
-                        results["vehicles_created"] += 1
-
-                    created_vehicles[vehicle_name] = True
-
-                    compatibility = Compatibility(
-                        cod_product=product.cod_product,  # Use attribute access for the product object
-                        vehicle_name=vehicle_name  # Use the extracted vehicle_name
-                    )
-                    
-                    existing_compat = Compatibility.query.filter_by(cod_product=product.cod_product, vehicle_name=vehicle_name).first()
-                    
-                    if not existing_compat:
-                        db.session.add(compatibility)
-                        
-                        results["compatibilities_created"] += 1
-
-                    db.session.commit()
-
-            except Exception as e:
-                db.session.rollback()
-                results["errors"].append(f"Error on row {index + 2}: {str(e)}")
+            # Process each batch with a new session
+            await process_batch(
+                batch_df,
+                batch_idx,
+                created_categories,
+                created_vehicles,
+                results
+            )
 
         return {
-            "products": products,
             "stats": results
         }
 
     except Exception as e:
-        return {"error": str(e)}
+        import traceback
+        return {
+            "error": str(e),
+            "traceback": traceback.format_exc()
+        }
+
+
+async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, results):
+    """Process a batch of rows with a single session"""
+    # Process each row with its own session to prevent cascading failures
+    for index, row in batch_df.iterrows():
+        try:
+            async with db.async_session() as session:
+                async with session.begin():
+                    await process_row(
+                        index,
+                        row,
+                        session,
+                        created_categories,
+                        created_vehicles,
+                        results
+                    )
+
+            results["processed"] += 1
+        except Exception as e:
+            results["errors"].append(
+                f"Error on row {index + 2}: {str(e)}"
+            )
+
+
+async def process_row(index, row, session, created_categories, created_vehicles, results):
+    """Process a single row from the Excel file"""
+    try:
+        # Get category
+        category_name = row["CATEGORY"]
+        category_hash = await get_or_create_category(
+            session,
+            category_name,
+            created_categories,
+            results
+        )
+
+        # Create product dict
+        product_dict = {
+            "cod_product": row["COD_PRODUCT"],
+            "name_product": row["NAME_PRODUCT"],
+            "bar_code": row["BAR_CODE"],
+            "gear_quantity": None if pd.isna(row["GEAR_QUANTITY"]) else row["GEAR_QUANTITY"],
+            "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
+            "cross_reference": None if pd.isna(row["CROSS_REF"]) else row["CROSS_REF"],
+            "hash_category": category_hash
+        }
+
+        # Check if product exists before adding
+        sql_statement = select(Product).where(
+            Product.cod_product == product_dict["cod_product"])
+        result = await session.execute(sql_statement)
+        existing_product = result.scalars().first()
+
+        if not existing_product:
+            product = Product(**product_dict)
+            session.add(product)
+            results["products_created"] += 1
+
+        # Extract vehicle compatibility info
+        vehicles_names_string = row.get("COMPATIBILITY", "")
+        start_year_string = row.get("START_YEAR", "")
+        end_year_string = row.get("END_YEAR", "")
+        vehicle_type_string = row.get("TYPE_VEICULO", "")
+
+        # Extract the values from the strings to lists
+        vehicles_names_list = extract_compat_to_list(vehicles_names_string)
+        start_year_list = extract_compat_to_list(start_year_string)
+        end_year_list = extract_compat_to_list(end_year_string)
+        vehicle_type_list = extract_compat_to_list(vehicle_type_string)
+
+        # Process vehicle compatibilities
+        compat_qtd = len(vehicles_names_list)
+        for i in range(compat_qtd):
+            if (i >= len(start_year_list) or
+                i >= len(end_year_list) or
+                    i >= len(vehicle_type_list)):
+                continue
+
+            vehicle_name = vehicles_names_list[i].strip()
+
+            # Skip empty vehicle names
+            if not vehicle_name:
+                continue
+
+            # Create or get vehicle
+            await get_or_create_vehicle(
+                session,
+                vehicle_name,
+                start_year_list[i].strip(),
+                end_year_list[i].strip() if end_year_list[i] not in [
+                    "Desconhecido", "Desconhecido."] else None,
+                vehicle_type_list[i].strip(),
+                created_vehicles,
+                results
+            )
+
+            # Create compatibility if needed
+            await get_or_create_compatibility(
+                session,
+                product_dict["cod_product"],
+                vehicle_name,
+                results
+            )
+
+    except Exception as e:
+        results["errors"].append(f"Error on row {index + 2}: {str(e)}")
+
+
+async def get_or_create_category(session, category_name, created_categories, results):
+    """Get an existing category or create a new one"""
+    # Check cache first
+    if category_name in created_categories:
+        return created_categories[category_name]
+
+    # Check database
+    stmt = select(Category).where(Category.name_category == category_name)
+    result = await session.execute(stmt)
+    existing_category = result.scalars().first()
+
+    if existing_category:
+        category_hash = existing_category.hash_category
+    else:
+        category_hash = generate_category_hash(category_name)
+        new_category = Category(
+            hash_category=category_hash,
+            name_category=category_name
+        )
+        session.add(new_category)
+        results["categories_created"] += 1
+
+    created_categories[category_name] = category_hash
+    return category_hash
+
+
+async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, created_vehicles, results):
+    """Get an existing vehicle or create a new one"""
+    # Check if already processed
+    if vehicle_name in created_vehicles:
+        return
+
+    # Check database
+    stmt = select(Vehicle).where(Vehicle.vehicle_name == vehicle_name)
+    result = await session.execute(stmt)
+    existing_vehicle = result.scalars().first()
+
+    if not existing_vehicle:
+        new_vehicle = Vehicle(
+            vehicle_name=vehicle_name,
+            start_year=start_year,
+            end_year=end_year,
+            vehicle_type=vehicle_type
+        )
+        session.add(new_vehicle)
+        results["vehicles_created"] += 1
+
+    created_vehicles[vehicle_name] = True
+
+
+async def get_or_create_compatibility(session, product_code, vehicle_name, results):
+    """Create a compatibility if it doesn't exist"""
+    # Check if compatibility exists
+    stmt = select(Compatibility).where(
+        Compatibility.cod_product == product_code,
+        Compatibility.vehicle_name == vehicle_name
+    )
+    result = await session.execute(stmt)
+    existing_compat = result.scalars().first()
+
+    if not existing_compat:
+        compatibility = Compatibility(
+            cod_product=product_code,
+            vehicle_name=vehicle_name
+        )
+        session.add(compatibility)
+        results["compatibilities_created"] += 1
+
+# Synchronous wrapper function
+
+
+def process_excel(file_path, batch_size=100):
+    """
+    Synchronous wrapper for asynchronous processing function.
+    This is what you'll call from your Flask routes.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_process_excel_async(file_path, batch_size))
+    finally:
+        loop.close()
+        
+        
+def is_image_file(filename):
+    valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
+    
+    return filename.lower().endswith(valid_extensions)
+    
