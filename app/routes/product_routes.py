@@ -5,38 +5,119 @@ from app.utils.functions import process_excel
 import tempfile
 import os
 from app.dal.S3_client import S3ClientSingleton
-from app.utils.functions import is_image_file
+from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_product, serialize_meta_pagination
+
 
 product_bp = Blueprint("products", __name__)
 
+
 @product_bp.route("/", methods=["GET"])
 def get_products():
-    products = Product.query.all()
-    result = []
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
     
-    for product in products:
-        # Get related category name if available
-        category_name = product.category.name_category if product.category else None
-        
-        # Get list of image URLs
-        image_urls = [image.url for image in product.images]
-        
-        # Get list of vehicles this product is compatible with
-        compatibility = [{"vehicle_name": comp.vehicle_name} for comp in product.compatibilities]
-        
-        result.append({
-            "cod_product": product.cod_product,
-            "name_product": product.name_product,
-            "bar_code": product.bar_code,
-            "gear_quantity": product.gear_quantity,
-            "gear_dimensions": product.gear_dimensions,
-            "cross_reference": product.cross_reference,
-            "category": category_name,
-            "images": image_urls,
-            "compatibilities": compatibility
-        })
+    pagination = Product.query.paginate(page=page, per_page=per_page, error_out=False)
     
-    return jsonify(result), 200
+    products = serialize_product(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total, 
+        pagination.pages, 
+        pagination.page, 
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "products": products,
+        "meta": meta
+    }), 200
+
+
+@product_bp.route("/by-category", methods=["GET"])
+def get_products_by_category():
+    category = request.args.get("category")
+    
+    if not category:
+        return jsonify({"message": "Nenhuma categoria fornecida"}), 400
+    
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 10, type=int)
+    
+    pagination = Product.query.filter_by(hash_category=category).paginate(page=page, per_page=per_page, error_out=False)
+    
+    products = serialize_product(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total,
+        pagination.pages,
+        pagination.page,
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "products": products,
+        "meta": meta
+    }), 200
+
+
+@product_bp.route("/search/<string:search_term>", methods=["GET"])
+def search_product(search_term):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    
+    if not search_term:
+        return jsonify({"message": "Nenhum termo de busca fornecido"}), 400
+    
+    pagination = Product.query.filter(
+        Product.cod_product.ilike(f"%{search_term}%") |
+        Product.name_product.ilike(f"%{search_term}%") |
+        Product.cross_reference.ilike(f"%{search_term}%")
+    ).paginate(page=page, per_page=per_page, error_out=False)
+    
+    filtered_products = serialize_product(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total,
+        pagination.pages,
+        pagination.page,
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "vehicles": filtered_products,
+        "meta": meta
+    }), 200
+
+
+@product_bp.route("/by-compatibility/<string:vehicle_name>", methods=["GET"])
+def get_by_compatibility(vehicle_name):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    
+    if not vehicle_name:
+        return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
+    
+    print(vehicle_name)
+    
+    pagination = Product.query \
+        .join(Compatibility, Product.cod_product == Compatibility.cod_product) \
+        .join(Vehicle, Compatibility.vehicle_name == Vehicle.vehicle_name) \
+        .filter(Vehicle.vehicle_name == vehicle_name) \
+        .paginate(page=page, per_page=per_page, error_out=False)
+    
+    filtered_products = serialize_product(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total, 
+        pagination.pages, 
+        pagination.page, 
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "vehicles": filtered_products,
+        "meta": meta    
+    }), 200
 
 
 @product_bp.route("/", methods=["POST"])
@@ -89,6 +170,7 @@ def create_products_from_csv():
         # Always ensure the temporary file is removed
         if os.path.exists(temp_path):
             os.remove(temp_path)
+
 
 @product_bp.route("/<string:cod_product>", methods=["GET"])
 def get_product(cod_product):
@@ -147,26 +229,35 @@ def upload_product_images():
     FOLDER = os.path.join("app", "uploads")
     
     product_codes = {product.cod_product for product in db.session.query(Product.cod_product).all()}
+    image_codes = {image.cod_product for image in db.session.query(Images.cod_product).all()}
     
-    count = 0
+    non_existing_prod_codes = product_codes.difference(image_codes)
+    
+    # print(non_existing_prod_codes)
+    
+    # count = 0
     uploaded_files = []
     
     for filename in os.listdir(FOLDER):
         file_path = os.path.join(FOLDER, filename)
         
-        print(file_path)
-        
         filename_no_ext, _ = os.path.splitext(filename)
 
-        """"""
-        if filename_no_ext in product_codes and is_image_file(filename):
+        if filename_no_ext in non_existing_prod_codes and is_image_file(filename):
+            
+            next_num = extract_existing_product_codes()
+                
+            new_cod_product = f"{filename_no_ext}-{next_num}"
+            
             object_name = filename
-            response = s3_client.upload_image_from_folder(file_path, BUCKET_NAME, object_name)
+            
+            response = s3_client.upload_image_from_folder(file_path, BUCKET_NAME, new_cod_product)
             
             print(response)
             
             image = {
                 "cod_product": filename_no_ext,
+                "id_image": new_cod_product,
                 "url": f"https://{BUCKET_NAME}.s3.amazonaws.com/{object_name}"
             }
             
@@ -178,14 +269,14 @@ def upload_product_images():
                 
                 uploaded_files.append(image)
                 
-                count += 1
+                # count += 1
             else:
                 print(f"Failed to upload {filename}")
 
-            # Return early after uploading 2 images
+            """ Return early after uploading 2 images
             if count == 2:
                 return jsonify({"message": "Imagens enviadas com sucesso", "files": uploaded_files}), 201
-        
+            """
     
     # Ensure response even if fewer than 2 images were uploaded
     return jsonify({"message": "Upload process completed", "files": uploaded_files}), 201
@@ -196,4 +287,26 @@ def delete_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
     
     if not product:
-        return jsonify({"message": "Produto não encontrado"}), 200
+        return jsonify({"message": "Produto não encontrado"}), 400
+    
+    try:
+        # Delete all related Images
+        for image in product.images:
+            db.session.delete(image)
+            
+        # Delete all related Compatibility records
+        for comp in product.compatibilities:
+            db.session.delete(comp)
+            
+        # Delete the product itself
+        db.session.delete(product)
+        
+        # Commit all deletions
+        db.session.commit()
+            
+    except Exception as e:
+        db.session.rollback()
+        
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+    

@@ -4,16 +4,16 @@ import os
 from datetime import datetime
 import asyncio
 import concurrent.futures
-from app.models import Category, Product, Vehicle, Compatibility
+from app.models import Category, Product, Vehicle, Compatibility, Images
 from app.extensions import db
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 from flask import current_app
 from botocore.exceptions import NoCredentialsError
 
-# Helper functions remain the same
 
-
+""" --------------------------------- Functions to handle product, category, compatibility and vehicles insertions on the database --------------------------------- """
+# Extract compatibilities from the compat column from Excel and tranform it in an array/list
 def extract_compat_to_list(compat_str):
     if not compat_str or pd.isna(compat_str):
         return []
@@ -27,15 +27,14 @@ def extract_compat_to_list(compat_str):
     return vehicles
 
 
+# Generate category hash with category name and the current date-time
 def generate_category_hash(category_name):
     now = datetime.now()
     dt_string = now.strftime("%d%m%Y%H%M%S")
     category_hash = f"{category_name}-{dt_string}"
     return category_hash
 
-# Asynchronous processing function
-
-
+# Asynchronous processing function to process the product insertion in batches after reading the Excel
 async def _process_excel_async(file_path, batch_size):
     try:
         # Read the Excel file
@@ -102,7 +101,7 @@ async def _process_excel_async(file_path, batch_size):
             "traceback": traceback.format_exc()
         }
 
-
+# Function to start the process of batches to insert into the database
 async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, results):
     """Process a batch of rows with a single session"""
     # Process each row with its own session to prevent cascading failures
@@ -126,6 +125,7 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
             )
 
 
+# Function to check the existence of the data and then register each row on the database
 async def process_row(index, row, session, created_categories, created_vehicles, results):
     """Process a single row from the Excel file"""
     try:
@@ -278,9 +278,7 @@ async def get_or_create_compatibility(session, product_code, vehicle_name, resul
         session.add(compatibility)
         results["compatibilities_created"] += 1
 
-# Synchronous wrapper function
-
-
+# Synchronous wrapper function to handle the batch loop
 def process_excel(file_path, batch_size=100):
     """
     Synchronous wrapper for asynchronous processing function.
@@ -293,9 +291,77 @@ def process_excel(file_path, batch_size=100):
     finally:
         loop.close()
         
-        
 def is_image_file(filename):
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
     
     return filename.lower().endswith(valid_extensions)
+
+def extract_existing_product_codes():
+    existing_images = db.session.query(Images.cod_product).filter(
+        Images.cod_product.like("f{filename_no_ext}%")
+    ).all()
     
+    existing_codes = {img.cod_product for img in existing_images}
+    
+    if existing_codes:
+        numbers = [int(code.split("+")[-1]) for code in existing_codes if "-" in code]
+        next_num = max(numbers) + 1 if numbers else 1
+        
+        return next_num
+    else:
+        next_num = 1
+        
+        return next_num
+    
+
+""" ----------------------------- Function to handle json from the database ------------------------------ """
+
+def serialize_product(products):
+    result = []
+    
+    for product in products:
+        # Get related category name if available
+        category_name = product.category.name_category if product.category else None
+        
+        # Get list of image URLs
+        image_urls = [image.url for image in product.images]
+        
+        # Get list of vehicles this product is compatible with
+        compatibility = [{"vehicle_name": comp.vehicle_name} for comp in product.compatibilities]
+        
+        result.append({
+            "cod_product": product.cod_product,
+            "name_product": product.name_product,
+            "bar_code": product.bar_code,
+            "gear_quantity": product.gear_quantity,
+            "gear_dimensions": product.gear_dimensions,
+            "cross_reference": product.cross_reference,
+            "category": category_name,
+            "images": image_urls,
+            "compatibilities": compatibility
+        })
+    
+    return result
+
+
+def serialize_vehicle(vehicles):
+    result = []
+    
+    for vehicle in vehicles:
+        result.append({
+            "vehicle_name": vehicle.vehicle_name,
+            "vehicle_type": vehicle.vehicle_type,
+            "start_year": vehicle.start_year,
+            "end_year": vehicle.end_year
+        })
+    
+    return result
+
+def serialize_meta_pagination(total, pages, page, per_page):
+    
+    return {
+        "total_items": total,
+        "total_pages": pages,
+        "current_page": page,
+        "per_page": per_page
+    }

@@ -25,8 +25,8 @@ def setup_async_sqlalchemy(app):
         # Default case
         async_uri = db_uri
     
-    print(f"Original URI: {db_uri}")
-    print(f"Async URI: {async_uri}")
+    # print(f"Original URI: {db_uri}")
+    # print(f"Async URI: {async_uri}")
     
     # Create async engine
     async_engine = create_async_engine(

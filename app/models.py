@@ -22,10 +22,11 @@ class Product(db.Model):
     compatibilities = db.relationship('Compatibility', backref='product', lazy=True)
     
     def __repr__(self):
-        return f"Product('{self.cod_product}', '{self.name_product}', '{self.bar_code}', '{self.gear_quantity}', '{self.gear_dimenions}', '{self.cross_reference}', '{self.hash_category}')"
+        return f"Product('{self.cod_product}', '{self.name_product}', '{self.bar_code}', '{self.gear_quantity}', '{self.gear_dimensions}', '{self.cross_reference}', '{self.hash_category}')"
     
 class Images(db.Model):
-    cod_product = db.Column(db.String(255), db.ForeignKey('product.cod_product'), primary_key=True)
+    cod_product = db.Column(db.String(255), db.ForeignKey('product.cod_product'))
+    id_image = db.Column(db.String(255), primary_key=True)
     url = db.Column(db.String(255), nullable=False)
     
     def __repr__(self):

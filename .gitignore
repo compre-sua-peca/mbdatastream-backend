@@ -44,3 +44,5 @@ build/
 
 # Project specific
 script.py.mako
+
+app/uploads/*
