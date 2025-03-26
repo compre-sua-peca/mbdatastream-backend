@@ -308,5 +308,61 @@ def delete_product(cod_product):
         db.session.rollback()
         
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+@product_bp.route("/sync-images", methods=["PATCH"])
+def sync_images():
+    s3_client = S3ClientSingleton()
     
+    BUCKET_NAME = "mb-datastream"
     
+    # Retrieve all images from S3
+    online_images = s3_client.list_image_names(BUCKET_NAME)
+    
+    # Extract product codes from online images
+    online_image_codes = {img.get("cod_prod") for img in online_images if img.get("cod_prod")}
+    
+    # Query local images from the database and extract their product codes
+    local_images = db.session.query(Images).all()
+    local_image_codes = {img.cod_product for img in local_images}
+    
+    # Retrieve all valid product codes from the product table to avoid foreign key issues
+    valid_products = db.session.query(Product.cod_product).all()
+    valid_product_codes = {prod[0] for prod in valid_products}
+    
+    # Determine missing codes (images present online but not in the local DB)
+    missing_codes = (online_image_codes - local_image_codes) & valid_product_codes
+    
+    synced_images = []
+    
+    # total_num = len(missing_codes)
+    # percentage = 0
+    
+    for image in online_images:
+        # Check if this image is missing locally by its product code
+        if image.get("cod_prod") in missing_codes:
+            new_image = Images(
+                cod_product=image.get("cod_prod"),
+                id_image=image.get("name"),
+                url=image.get("url", "")
+            )
+            
+            db.session.add(new_image)
+            synced_images.append(new_image)
+            # percentage += 1
+            
+            # print(f"{percentage} | {total_num}")
+        
+    # Commit once after processing all images
+    db.session.commit()
+    
+    if not synced_images:
+        return jsonify({
+            "message": "Nenhuma imagem para ser inserida", 
+            "s3-images": list(online_image_codes)
+        })
+    
+    return jsonify({
+        "message": "Imagens sincronizadas com sucesso!", 
+        "images": [img.id_image for img in synced_images]
+    })

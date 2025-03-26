@@ -2,9 +2,10 @@ from flask import Blueprint, jsonify, request
 from app.models import Vehicle
 from app.extensions import db
 from app.utils.functions import serialize_vehicle, serialize_meta_pagination
-import json
+
 
 vehicle_bp = Blueprint("vehicles", __name__)
+
 
 # List all vehicles
 @vehicle_bp.route("/", methods=["GET"])
