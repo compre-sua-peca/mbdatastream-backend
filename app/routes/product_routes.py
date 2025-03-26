@@ -363,6 +363,5 @@ def sync_images():
         })
     
     return jsonify({
-        "message": "Imagens sincronizadas com sucesso!", 
-        "images": [img.id_image for img in synced_images]
+        "message": "Imagens sincronizadas com sucesso!"
     })

@@ -16,6 +16,7 @@ class S3ClientSingleton:
                 region_name=os.environ.get('REGION_NAME')
             )
             cls._instance = instance
+            
         return cls._instance
 
     def upload_image(self, file, bucket, object_name):

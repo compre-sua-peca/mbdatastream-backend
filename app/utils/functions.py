@@ -192,7 +192,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
                 vehicle_name,
                 start_year_list[i].strip(),
                 end_year_list[i].strip() if end_year_list[i] not in [
-                    "Desconhecido", "Desconhecido."] else None,
+                    "Desconhecido", "Desconhecido.", "/Desconhecido"] else None,
                 vehicle_type_list[i].strip(),
                 created_vehicles,
                 results
