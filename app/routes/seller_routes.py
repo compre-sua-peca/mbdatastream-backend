@@ -7,13 +7,13 @@ from app.utils.functions import serialize_product
 seller_bp = Blueprint("sellers", __name__)
 
 
-@seller_bp.route("/", methods=["GET"])
-def get_seller_info():
+@seller_bp.route("/<string:seller_domain>", methods=["GET"])
+def get_seller_info(seller_domain):    
     dynamo_client = DynamoSingleton()
     
     table = "CatalogSellers"
     key_name = "seller_domain"
-    key_value = "mobensani"
+    key_value = seller_domain
     
     seller = dynamo_client.get_item_by_hash_key(table, key_name, key_value)
     
