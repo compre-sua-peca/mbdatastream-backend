@@ -84,7 +84,7 @@ def search_product(search_term):
     )
     
     return jsonify({
-        "vehicles": filtered_products,
+        "products": filtered_products,
         "meta": meta
     }), 200
 

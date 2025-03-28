@@ -1,4 +1,5 @@
 from flask import Blueprint, jsonify, request
+from flask_cors import CORS, cross_origin
 from app.models import Category
 from app.extensions import db
 
@@ -6,6 +7,7 @@ category_bp = Blueprint("categories", __name__)
 
 # List all categories
 @category_bp.route("/", methods=["GET"])
+@cross_origin(origins='*')
 def get_categories():
     categories = Category.query.all()
     result = []
@@ -46,6 +48,7 @@ def get_category(hash_category):
     }
     return jsonify(data), 200
 
+
 # Update an existing category
 @category_bp.route("/<string:hash_category>", methods=["PUT"])
 def update_category(hash_category):
@@ -58,6 +61,7 @@ def update_category(hash_category):
 
     db.session.commit()
     return jsonify({"message": "Category updated successfully!"}), 200
+
 
 # Remove a category
 @category_bp.route("/<string:hash_category>", methods=["DELETE"])

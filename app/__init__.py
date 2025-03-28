@@ -1,4 +1,5 @@
 from flask import Flask
+
 from config.settings import Config
 from app.extensions import db, migrate, setup_async_sqlalchemy
 from app.routes import register_routes
@@ -6,6 +7,7 @@ from app.routes import register_routes
 def create_app(config_class=Config):
     """Application factory pattern"""
     app = Flask(__name__)
+    
     app.config.from_object(config_class)
     
     # Initialize extensions

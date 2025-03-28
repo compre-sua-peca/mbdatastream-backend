@@ -85,7 +85,7 @@ class S3ClientSingleton:
                 if 'Contents' in response:
                     for obj in response['Contents']:
                         image_name = obj['Key']
-                        image_url = f"https://{bucket}.s3.{os.environ.get('REGION_NAME')}.amazonaws.com/{image_name}"
+                        image_url = f"https://{bucket}.s3.{os.environ.get('AWS_REGION_NAME')}.amazonaws.com/{image_name}"
                         cod_product = image_name.split("-")[0] if '-' in image_name else image_name
                         images.append({"name": image_name, "cod_prod": cod_product, "url": image_url})
                 
