@@ -97,12 +97,14 @@ def get_by_compatibility(vehicle_name):
     if not vehicle_name:
         return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
     
+    upper_vehicle_name = vehicle_name.upper()
+    
     print(vehicle_name)
     
     pagination = Product.query \
         .join(Compatibility, Product.cod_product == Compatibility.cod_product) \
         .join(Vehicle, Compatibility.vehicle_name == Vehicle.vehicle_name) \
-        .filter(Vehicle.vehicle_name == vehicle_name) \
+        .filter(Vehicle.vehicle_name.ilike(f"%{upper_vehicle_name}%")) \
         .paginate(page=page, per_page=per_page, error_out=False)
     
     filtered_products = serialize_product(pagination.items)
@@ -115,7 +117,7 @@ def get_by_compatibility(vehicle_name):
     )
     
     return jsonify({
-        "vehicles": filtered_products,
+        "products": filtered_products,
         "meta": meta    
     }), 200
 
