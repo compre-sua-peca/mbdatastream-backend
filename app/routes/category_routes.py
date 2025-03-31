@@ -1,26 +1,23 @@
 from flask import Blueprint, jsonify, request
-from flask_cors import CORS, cross_origin
 from app.models import Category
 from app.extensions import db
 
 category_bp = Blueprint("categories", __name__)
 
-# List all categories
-@category_bp.route("/", methods=["GET"])
-@cross_origin(origins='*')
-def get_categories():
-    categories = Category.query.all()
-    result = []
+@category_bp.route("/get-all", methods=["GET"])
+def get_all_categories():
+    category = Category.query.all()
     
-    if categories:
-        for category in categories:
-            result.append({
+    results = []
+    
+    if category:
+        for category in category:
+            results.append({
                 "hash_category": category.hash_category,
                 "name_category": category.name_category
             })
             
-    return jsonify(result), 200
-
+    return jsonify(results), 200
 
 # Create a new category
 @category_bp.route("/", methods=["POST"])
