@@ -103,9 +103,9 @@ def get_by_compatibility(vehicle_name):
     
     upper_vehicle_name = vehicle_name.upper()
     
-    # Custom SQL with wildcard search - using LIKE for MySQL
-    sql = text("""
-        SELECT p.*
+    # First get the list of product IDs that match the compatibility
+    product_ids_sql = text("""
+        SELECT DISTINCT p.cod_product
         FROM product p
         JOIN compatibility c ON p.cod_product = c.cod_product
         JOIN vehicle v ON c.vehicle_name = v.vehicle_name
@@ -113,9 +113,8 @@ def get_by_compatibility(vehicle_name):
         LIMIT :limit OFFSET :offset
     """)
     
-    # Execute query with parameters
-    result = db.session.execute(
-        sql, 
+    product_ids_result = db.session.execute(
+        product_ids_sql, 
         {
             "vehicle_pattern": f"%{upper_vehicle_name}%",
             "limit": per_page,
@@ -123,12 +122,83 @@ def get_by_compatibility(vehicle_name):
         }
     )
     
-    # Convert results to dict
-    products = [row._asdict() for row in result]
+    product_ids = [row[0] for row in product_ids_result]
+    
+    # If no products found, return empty result
+    if not product_ids:
+        # Get total for pagination
+        count_sql = text("""
+            SELECT COUNT(DISTINCT p.cod_product) as total
+            FROM product p
+            JOIN compatibility c ON p.cod_product = c.cod_product
+            JOIN vehicle v ON c.vehicle_name = v.vehicle_name
+            WHERE v.vehicle_name LIKE :vehicle_pattern
+        """)
+        
+        count_result = db.session.execute(count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first()
+        total = count_result.total
+        
+        # Calculate pagination metadata
+        total_pages = math.ceil(total / per_page)
+        
+        meta = serialize_meta_pagination(
+            total,
+            total_pages,
+            page,
+            per_page
+        )
+        
+        return jsonify({
+            "products": [],
+            "meta": meta
+        }), 200
+    
+    # Then get full details for these products, including all images
+    details_sql = text("""
+        SELECT 
+            p.*,
+            ct.hash_category,
+            ct.name_category,
+            img.url,
+            img.cod_product,
+            img.id_image
+        FROM product p
+        JOIN category ct ON ct.hash_category = p.hash_category
+        LEFT JOIN images img ON p.cod_product = img.cod_product
+        WHERE p.cod_product IN :product_ids
+    """)
+    
+    details_result = db.session.execute(
+        details_sql, 
+        {
+            "product_ids": tuple(product_ids)
+        }
+    )
+    
+    # Organize the results by product
+    products_dict = {}
+    for row in details_result:
+        row_dict = row._asdict()
+        product_id = row_dict['cod_product']
+        
+        if product_id not in products_dict:
+            # Initialize product data
+            products_dict[product_id] = {
+                key: row_dict[key] for key in row_dict 
+                if key not in ('url', 'cod_product', 'id_image')
+            }
+            products_dict[product_id]['images'] = []
+        
+        # Add image URL if available
+        if row_dict['url']:
+            products_dict[product_id]['images'].append(row_dict['url'])
+    
+    # Convert dictionary to list
+    products = list(products_dict.values())
     
     # Get total for pagination
     count_sql = text("""
-        SELECT COUNT(*) as total
+        SELECT COUNT(DISTINCT p.cod_product) as total
         FROM product p
         JOIN compatibility c ON p.cod_product = c.cod_product
         JOIN vehicle v ON c.vehicle_name = v.vehicle_name
