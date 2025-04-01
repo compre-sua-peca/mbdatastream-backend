@@ -185,7 +185,7 @@ def get_by_compatibility(vehicle_name):
             # Initialize product data
             products_dict[product_id] = {
                 key: row_dict[key] for key in row_dict 
-                if key not in ('url', 'cod_product', 'id_image')
+                if key not in ('url', 'id_image')
             }
             products_dict[product_id]['images'] = []
         
