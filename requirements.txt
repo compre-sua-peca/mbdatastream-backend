@@ -8,3 +8,4 @@ dotenv
 pandas
 aiomysql
 cryptography
+unquote

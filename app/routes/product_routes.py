@@ -1,11 +1,12 @@
 import math
 from flask import Blueprint, jsonify, request
-from sqlalchemy import text, bindparam
+from sqlalchemy import text
 from app.models import Product, Category, Images, Compatibility, Vehicle
 from app.extensions import db
 from app.utils.functions import process_excel
 import tempfile
 import os
+from urllib.parse import unquote_plus
 from app.dal.S3_client import S3ClientSingleton
 from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_product, serialize_meta_pagination
 
@@ -40,13 +41,15 @@ def get_products_by_category(hash_category):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
     
+    transformed_hash_category = hash_category.replace("|", "/")
+    
     if not hash_category:
         return jsonify({"message": "Nenhuma categoria fornecida"}), 400
     
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
     
-    pagination = Product.query.filter_by(hash_category=hash_category).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = Product.query.filter_by(hash_category=transformed_hash_category).paginate(page=page, per_page=per_page, error_out=False)
     
     products = serialize_product(pagination.items)
     
