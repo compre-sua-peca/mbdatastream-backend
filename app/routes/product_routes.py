@@ -1,6 +1,6 @@
 import math
 from flask import Blueprint, jsonify, request
-from sqlalchemy import text
+from sqlalchemy import text, bindparam
 from app.models import Product, Category, Images, Compatibility, Vehicle
 from app.extensions import db
 from app.utils.functions import process_excel
@@ -138,6 +138,8 @@ def get_by_compatibility(vehicle_name):
         count_result = db.session.execute(count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first()
         total = count_result.total
         
+        print(total)
+        
         # Calculate pagination metadata
         total_pages = math.ceil(total / per_page)
         
@@ -160,7 +162,7 @@ def get_by_compatibility(vehicle_name):
             ct.hash_category,
             ct.name_category,
             img.url,
-            img.cod_product,
+            img.cod_product AS image_cod_product,
             img.id_image
         FROM product p
         JOIN category ct ON ct.hash_category = p.hash_category
