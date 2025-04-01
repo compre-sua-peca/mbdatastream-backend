@@ -1,4 +1,6 @@
+import math
 from flask import Blueprint, jsonify, request
+from sqlalchemy import text
 from app.models import Product, Category, Images, Compatibility, Vehicle
 from app.extensions import db
 from app.utils.functions import process_excel
@@ -33,17 +35,18 @@ def get_products():
     }), 200
 
 
-@product_bp.route("/by-category", methods=["GET"])
-def get_products_by_category():
-    category = request.args.get("category")
+@product_bp.route("/by-category/<string:hash_category>", methods=["GET"])
+def get_products_by_category(hash_category):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
     
-    if not category:
+    if not hash_category:
         return jsonify({"message": "Nenhuma categoria fornecida"}), 400
     
     page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 10, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
     
-    pagination = Product.query.filter_by(hash_category=category).paginate(page=page, per_page=per_page, error_out=False)
+    pagination = Product.query.filter_by(hash_category=hash_category).paginate(page=page, per_page=per_page, error_out=False)
     
     products = serialize_product(pagination.items)
     
@@ -93,32 +96,61 @@ def search_product(search_term):
 def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
+    offset = (page - 1) * per_page
     
     if not vehicle_name:
         return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
     
     upper_vehicle_name = vehicle_name.upper()
     
-    print(vehicle_name)
+    # Custom SQL with wildcard search - using LIKE for MySQL
+    sql = text("""
+        SELECT p.*
+        FROM product p
+        JOIN compatibility c ON p.cod_product = c.cod_product
+        JOIN vehicle v ON c.vehicle_name = v.vehicle_name
+        WHERE v.vehicle_name LIKE :vehicle_pattern
+        LIMIT :limit OFFSET :offset
+    """)
     
-    pagination = Product.query \
-        .join(Compatibility, Product.cod_product == Compatibility.cod_product) \
-        .join(Vehicle, Compatibility.vehicle_name == Vehicle.vehicle_name) \
-        .filter(Vehicle.vehicle_name.ilike(f"%{upper_vehicle_name}%")) \
-        .paginate(page=page, per_page=per_page, error_out=False)
+    # Execute query with parameters
+    result = db.session.execute(
+        sql, 
+        {
+            "vehicle_pattern": f"%{upper_vehicle_name}%",
+            "limit": per_page,
+            "offset": offset
+        }
+    )
     
-    filtered_products = serialize_product(pagination.items)
+    # Convert results to dict
+    products = [row._asdict() for row in result]
+    
+    # Get total for pagination
+    count_sql = text("""
+        SELECT COUNT(*) as total
+        FROM product p
+        JOIN compatibility c ON p.cod_product = c.cod_product
+        JOIN vehicle v ON c.vehicle_name = v.vehicle_name
+        WHERE v.vehicle_name LIKE :vehicle_pattern
+    """)
+    
+    count_result = db.session.execute(count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first()
+    total = count_result.total
+    
+    # Calculate pagination metadata
+    total_pages = math.ceil(total / per_page)
     
     meta = serialize_meta_pagination(
-        pagination.total, 
-        pagination.pages, 
-        pagination.page, 
-        pagination.per_page
+        total,
+        total_pages,
+        page,
+        per_page
     )
     
     return jsonify({
-        "products": filtered_products,
-        "meta": meta    
+        "products": products,
+        "meta": meta
     }), 200
 
 
