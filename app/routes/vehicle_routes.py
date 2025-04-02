@@ -8,7 +8,7 @@ vehicle_bp = Blueprint("vehicles", __name__)
 
 
 # List all vehicles
-@vehicle_bp.route("/", methods=["GET"])
+@vehicle_bp.route("/get-all", methods=["GET"])
 def get_vehicles():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -61,6 +61,37 @@ def get_vehicle(vehicle_name):
         "vehicle_type": vehicle.vehicle_type
     }
     return jsonify(data), 200
+
+# Retrieve a single vehicle by its vehicle_name
+@vehicle_bp.route("/search/<string:vehicle_name>", methods=["GET"])
+def search_vehicle(vehicle_name):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    
+    transformed_vehicle_name = vehicle_name.upper()
+    
+    pagination = Vehicle.query.filter(Vehicle.vehicle_name.ilike(f"%{transformed_vehicle_name}%")).paginate(
+        page=page,
+        per_page=per_page,
+        error_out=False
+    )
+    
+    if not pagination.items:
+        return jsonify({"message": "Vehicle not found"}), 404
+
+    filtered_vehicles = serialize_vehicle(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total, 
+        pagination.pages, 
+        pagination.page, 
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "vehicles": filtered_vehicles,
+        "meta": meta
+    }), 200
 
 # Update an existing vehicle
 @vehicle_bp.route("/<string:vehicle_name>", methods=["PUT"])

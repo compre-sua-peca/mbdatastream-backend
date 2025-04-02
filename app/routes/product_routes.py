@@ -6,7 +6,6 @@ from app.extensions import db
 from app.utils.functions import process_excel
 import tempfile
 import os
-from urllib.parse import unquote_plus
 from app.dal.S3_client import S3ClientSingleton
 from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_product, serialize_meta_pagination
 
@@ -14,7 +13,7 @@ from app.utils.functions import is_image_file, extract_existing_product_codes, s
 product_bp = Blueprint("products", __name__)
 
 
-@product_bp.route("/", methods=["GET"])
+@product_bp.route("/get-all", methods=["GET"])
 def get_products():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
