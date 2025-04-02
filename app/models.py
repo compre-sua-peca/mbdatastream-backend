@@ -12,6 +12,7 @@ class Category(db.Model):
 class Product(db.Model):
     cod_product = db.Column(db.String(255), primary_key=True)
     name_product = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.String(2500), nullable=False)
     bar_code = db.Column(db.BigInteger, nullable=False)
     gear_quantity = db.Column(db.Integer, nullable=False)
     gear_dimensions = db.Column(db.String(255), nullable=True)
@@ -37,7 +38,7 @@ class Vehicle(db.Model):
     start_year = db.Column(db.String(4), nullable=False)
     end_year = db.Column(db.String(4), nullable=True)
     vehicle_type = db.Column(db.String(255), nullable=False)
-    hash_brand = db.Column(db.String(255), db.ForeignKey('vehiclebrand.hash_brand'), nullable=False)
+    hash_brand = db.Column(db.String(255), db.ForeignKey('vehicle_brand.hash_brand'), nullable=False)
     
     compatibilities = db.relationship('Compatibility', backref='vehicle', lazy=True)
     
@@ -49,6 +50,7 @@ class Compatibility(db.Model):
         return f"Compatibility('{self.cod_product}', '{self.vehicle_name}')"
     
 class VehicleBrand(db.Model):
+    __tablename__ = "vehicle_brand"
     hash_brand = db.Column(db.String(255), primary_key=True)
     brand_name = db.Column(db.String(255), nullable=False)
     brand_image = db.Column(db.String(255), nullable=True)

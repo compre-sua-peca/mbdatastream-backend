@@ -1,16 +1,11 @@
 import pandas as pd
-import boto3
-import os
 from datetime import datetime
 import asyncio
-import concurrent.futures
-from app.models import Category, Product, Vehicle, Compatibility, Images
+from app.models import Category, Product, Vehicle, Compatibility, Images, VehicleBrand
 from app.extensions import db
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
-from flask import current_app
-from botocore.exceptions import NoCredentialsError
-
+from app.dal.encryptor import HashGenerator
 
 """ --------------------------------- Functions to handle product, category, compatibility and vehicles insertions on the database --------------------------------- """
 # Extract compatibilities from the compat column from Excel and tranform it in an array/list
@@ -43,7 +38,7 @@ async def _process_excel_async(file_path, batch_size):
         # Check if all required columns exist
         required_columns = [
             "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "CROSS_REF",
-            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE"
+            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND"
         ]
 
         # Convert column names to uppercase
@@ -63,6 +58,7 @@ async def _process_excel_async(file_path, batch_size):
             "categories_created": 0,
             "products_created": 0,
             "vehicles_created": 0,
+            "brands_created": 0,
             "compatibilities_created": 0,
             "errors": []
         }
@@ -74,9 +70,10 @@ async def _process_excel_async(file_path, batch_size):
         
         print(batches)
 
-        # Store created categories and vehicles across batches
+        # Store created categories, brands and vehicles across batches
         created_categories = {}
         created_vehicles = {}
+        created_brands = {}
 
         for batch_idx, batch_df in enumerate(batches):
             print(f"Processing batch {batch_idx+1}/{len(batches)}")
@@ -87,6 +84,7 @@ async def _process_excel_async(file_path, batch_size):
                 batch_idx,
                 created_categories,
                 created_vehicles,
+                created_brands,
                 results
             )
 
@@ -102,7 +100,7 @@ async def _process_excel_async(file_path, batch_size):
         }
 
 # Function to start the process of batches to insert into the database
-async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, results):
+async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, created_brands, results):
     """Process a batch of rows with a single session"""
     # Process each row with its own session to prevent cascading failures
     for index, row in batch_df.iterrows():
@@ -115,6 +113,7 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
                         session,
                         created_categories,
                         created_vehicles,
+                        created_brands,
                         results
                     )
 
@@ -126,7 +125,7 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
 
 
 # Function to check the existence of the data and then register each row on the database
-async def process_row(index, row, session, created_categories, created_vehicles, results):
+async def process_row(index, row, session, created_categories, created_vehicles, created_brands, results):
     """Process a single row from the Excel file"""
     try:
         # Get category
@@ -142,6 +141,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
         product_dict = {
             "cod_product": row["COD_PRODUCT"],
             "name_product": row["NAME_PRODUCT"],
+            "description": row["DESCRIPTION"],
             "bar_code": row["BAR_CODE"],
             "gear_quantity": None if pd.isna(row["GEAR_QUANTITY"]) else row["GEAR_QUANTITY"],
             "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
@@ -164,27 +164,39 @@ async def process_row(index, row, session, created_categories, created_vehicles,
         vehicles_names_string = row.get("COMPATIBILITY", "")
         start_year_string = row.get("START_YEAR", "")
         end_year_string = row.get("END_YEAR", "")
-        vehicle_type_string = row.get("TYPE_VEICULO", "")
+        vehicle_type_string = row.get("TYPE_VEHICLE", "")
+        vehicle_brands_string = row.get("VEHICLE_BRAND", "")
 
         # Extract the values from the strings to lists
         vehicles_names_list = extract_compat_to_list(vehicles_names_string)
         start_year_list = extract_compat_to_list(start_year_string)
         end_year_list = extract_compat_to_list(end_year_string)
         vehicle_type_list = extract_compat_to_list(vehicle_type_string)
+        vehicle_brands_list = extract_compat_to_list(vehicle_brands_string)
 
         # Process vehicle compatibilities
         compat_qtd = len(vehicles_names_list)
         for i in range(compat_qtd):
             if (i >= len(start_year_list) or
                 i >= len(end_year_list) or
-                    i >= len(vehicle_type_list)):
+                i >= len(vehicle_type_list) or
+                i >= len(vehicle_brands_list)):
                 continue
 
             vehicle_name = vehicles_names_list[i].strip()
+            vehicle_brand = vehicle_brands_list[i].strip()
 
-            # Skip empty vehicle names
-            if not vehicle_name:
+            # Skip empty vehicle names or brands
+            if not vehicle_name or not vehicle_brand:
                 continue
+
+            # Create or get brand first
+            brand_hash = await get_or_create_vehicle_brand(
+                session,
+                vehicle_brand,
+                created_brands,
+                results
+            )
 
             # Create or get vehicle
             await get_or_create_vehicle(
@@ -194,6 +206,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
                 end_year_list[i].strip() if end_year_list[i] not in [
                     "Desconhecido", "Desconhecido.", "/Desconhecido"] else None,
                 vehicle_type_list[i].strip(),
+                brand_hash,
                 created_vehicles,
                 results
             )
@@ -208,10 +221,40 @@ async def process_row(index, row, session, created_categories, created_vehicles,
 
     except Exception as e:
         results["errors"].append(f"Error on row {index + 2}: {str(e)}")
+        
+
+async def get_or_create_vehicle_brand(session, brand_name, created_brands, results):
+    """Get an existing vehicle brand or create a new one"""
+    hash_generator = HashGenerator()
+    
+    if brand_name in created_brands:
+        return created_brands[brand_name]
+    
+    # Check database
+    stmt = select(VehicleBrand).where(VehicleBrand.brand_name == brand_name)
+    result = await session.execute(stmt)
+    existing_brand = result.scalars().first()
+
+    if existing_brand:
+        brand_hash = existing_brand.hash_brand
+    else:
+        brand_hash = hash_generator.generate_hash(brand_name)
+        new_brand = VehicleBrand(
+            hash_brand=brand_hash,
+            brand_name=brand_name,
+            brand_image=None  # Set default to None, can be updated later
+        )
+        session.add(new_brand)
+        results["brands_created"] += 1
+
+    created_brands[brand_name] = brand_hash
+    return brand_hash
 
 
 async def get_or_create_category(session, category_name, created_categories, results):
     """Get an existing category or create a new one"""
+    hash_generator = HashGenerator()
+    
     # Check cache first
     if category_name in created_categories:
         return created_categories[category_name]
@@ -224,7 +267,7 @@ async def get_or_create_category(session, category_name, created_categories, res
     if existing_category:
         category_hash = existing_category.hash_category
     else:
-        category_hash = generate_category_hash(category_name)
+        category_hash = hash_generator.generate_hash(category_name)
         new_category = Category(
             hash_category=category_hash,
             name_category=category_name
@@ -236,7 +279,7 @@ async def get_or_create_category(session, category_name, created_categories, res
     return category_hash
 
 
-async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, created_vehicles, results):
+async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, hash_brand, created_vehicles, results):
     """Get an existing vehicle or create a new one"""
     # Check if already processed
     if vehicle_name in created_vehicles:
@@ -252,7 +295,8 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
             vehicle_name=vehicle_name,
             start_year=start_year,
             end_year=end_year,
-            vehicle_type=vehicle_type
+            vehicle_type=vehicle_type,
+            hash_brand=hash_brand
         )
         session.add(new_vehicle)
         results["vehicles_created"] += 1
@@ -327,11 +371,24 @@ def serialize_product(products):
         image_urls = [image.url for image in product.images]
         
         # Get list of vehicles this product is compatible with
-        compatibility = [{"vehicle_name": comp.vehicle_name} for comp in product.compatibilities]
+        compatibility = []
+        for comp in product.compatibilities:
+            vehicle = comp.vehicle
+            brand = vehicle.vehicle_brand if hasattr(vehicle, 'vehicle_brand') else None
+            
+            vehicle_data = {
+                "vehicle_name": comp.vehicle_name,
+                "vehicle_type": vehicle.vehicle_type if vehicle else None,
+                "start_year": vehicle.start_year if vehicle else None,
+                "end_year": vehicle.end_year if vehicle else None,
+                "brand": brand.brand_name if brand else None
+            }
+            compatibility.append(vehicle_data)
         
         result.append({
             "cod_product": product.cod_product,
             "name_product": product.name_product,
+            "description": product.description,
             "bar_code": product.bar_code,
             "gear_quantity": product.gear_quantity,
             "gear_dimensions": product.gear_dimensions,
@@ -352,10 +409,25 @@ def serialize_vehicle(vehicles):
             "vehicle_name": vehicle.vehicle_name,
             "vehicle_type": vehicle.vehicle_type,
             "start_year": vehicle.start_year,
-            "end_year": vehicle.end_year
+            "end_year": vehicle.end_year,
+            "hash_brand": vehicle.hash_brand
         })
     
     return result
+
+
+def serialize_brand(brands):
+    result = []
+    
+    for brand in brands:
+        result.append({
+            "hash_brand": brand.hash_brand,
+            "brand_name": brand.brand_name,
+            "brand_image": brand.brand_image
+        })
+    
+    return result
+
 
 def serialize_meta_pagination(total, pages, page, per_page):
     
