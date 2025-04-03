@@ -136,29 +136,8 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             created_categories,
             results
         )
-
-        # Create product dict
-        product_dict = {
-            "cod_product": row["COD_PRODUCT"],
-            "name_product": row["NAME_PRODUCT"],
-            "description": row["DESCRIPTION"],
-            "bar_code": row["BAR_CODE"],
-            "gear_quantity": None if pd.isna(row["GEAR_QUANTITY"]) else row["GEAR_QUANTITY"],
-            "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
-            "cross_reference": None if pd.isna(row["CROSS_REF"]) else row["CROSS_REF"],
-            "hash_category": category_hash
-        }
-
-        # Check if product exists before adding
-        sql_statement = select(Product).where(
-            Product.cod_product == product_dict["cod_product"])
-        result = await session.execute(sql_statement)
-        existing_product = result.scalars().first()
-
-        if not existing_product:
-            product = Product(**product_dict)
-            session.add(product)
-            results["products_created"] += 1
+        
+        cod_product = await get_or_create_product(session, row, category_hash, results)
 
         # Extract vehicle compatibility info
         vehicles_names_string = row.get("COMPATIBILITY", "")
@@ -214,7 +193,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             # Create compatibility if needed
             await get_or_create_compatibility(
                 session,
-                product_dict["cod_product"],
+                cod_product,
                 vehicle_name,
                 results
             )
@@ -249,6 +228,43 @@ async def get_or_create_vehicle_brand(session, brand_name, created_brands, resul
 
     created_brands[brand_name] = brand_hash
     return brand_hash
+
+
+async def get_or_create_product(session, row, category_hash, results):
+    name_product = row["NAME_PRODUCT"]
+    
+    name_check = name_product.split("-")[0].strip()
+    is_manufactured = True
+    
+    if name_check == "ITEM DESCONTINUADO":
+        name_product = name_product.split("-")[1].strip()
+        is_manufactured = False
+    
+    # Create product dict
+    product_dict = {
+        "cod_product": row["COD_PRODUCT"],
+        "name_product": name_product,
+        "description": row["DESCRIPTION"],
+        "is_manufactured": is_manufactured,
+        "bar_code": row["BAR_CODE"],
+        "gear_quantity": None if pd.isna(row["GEAR_QUANTITY"]) else row["GEAR_QUANTITY"],
+        "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
+        "cross_reference": None if pd.isna(row["CROSS_REF"]) else row["CROSS_REF"],
+        "hash_category": category_hash
+    }
+
+    # Check if product exists before adding
+    sql_statement = select(Product).where(
+        Product.cod_product == product_dict["cod_product"])
+    result = await session.execute(sql_statement)
+    existing_product = result.scalars().first()
+
+    if not existing_product:
+        product = Product(**product_dict)
+        session.add(product)
+        results["products_created"] += 1
+        
+    return product_dict["cod_product"]
 
 
 async def get_or_create_category(session, category_name, created_categories, results):

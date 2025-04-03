@@ -13,6 +13,8 @@ class Product(db.Model):
     cod_product = db.Column(db.String(255), primary_key=True)
     name_product = db.Column(db.String(255), nullable=False)
     description = db.Column(db.String(2500), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    is_manufactured = db.Column(db.Boolean, default=True)
     bar_code = db.Column(db.BigInteger, nullable=False)
     gear_quantity = db.Column(db.Integer, nullable=False)
     gear_dimensions = db.Column(db.String(255), nullable=True)

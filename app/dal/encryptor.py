@@ -1,6 +1,8 @@
 import os
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA256
+from numpy import pad
+import hashlib
 
 class HashGenerator:
     def __init__(self):
@@ -17,24 +19,25 @@ class HashGenerator:
         hash_obj = SHA256.new(value.encode())
         return hash_obj.digest()[:self.IV_LENGTH]
 
-    def _pad(self, s: str) -> bytes:
-        """
-        Apply PKCS7 padding to ensure the data is a multiple of AES block size.
-        """
-        bs = AES.block_size
-        pad_len = bs - (len(s) % bs)
-        padding = chr(pad_len) * pad_len
-        return (s + padding).encode()
-
     def generate_hash(self, name: str) -> str:
         """
         Encrypts the brand name deterministically using AES-256-CBC.
         Returns the hash in the format: "brand_name-encrypted_hex"
         """
-        iv = self.generate_iv(name)
-        cipher = AES.new(self.ENCRYPTION_BRAND_KEY, AES.MODE_CBC, iv)
-        padded_brand_name = self._pad(name)
-        encrypted_bytes = cipher.encrypt(padded_brand_name)
-        encrypted_hex = encrypted_bytes.hex()
-        
-        return f"{name}-{encrypted_hex}"
+        try:
+            iv = self.generate_iv(name)
+            cipher = AES.new(self.ENCRYPTION_BRAND_KEY, AES.MODE_CBC, iv)
+            
+            padded_data = pad(name.encode(), AES.block_size)
+            
+            encrypted_bytes = cipher.encrypt(padded_data)
+            encrypted_hex = encrypted_bytes.hex()
+            
+            return f"{name}-{encrypted_hex}"
+        except Exception as e:
+            print(f"Encryption error for {name}: {str(e)}. Using fallback hash")
+            hash_value = hashlib.sha256(name.encode()).hexdigest()[:16]
+            
+            return f"{name}-{hash_value}"
+            
+            
