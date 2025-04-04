@@ -1,10 +1,8 @@
 import pandas as pd
-from datetime import datetime
 import asyncio
 from app.models import Category, Product, Vehicle, Compatibility, Images, VehicleBrand
 from app.extensions import db
 from sqlalchemy.future import select
-from sqlalchemy.exc import IntegrityError
 from app.dal.encryptor import HashGenerator
 
 """ --------------------------------- Functions to handle product, category, compatibility and vehicles insertions on the database --------------------------------- """
@@ -20,14 +18,6 @@ def extract_compat_to_list(compat_str):
     items = trimmed.split(";")
     vehicles = [item.strip().strip("'").strip() for item in items]
     return vehicles
-
-
-# Generate category hash with category name and the current date-time
-def generate_category_hash(category_name):
-    now = datetime.now()
-    dt_string = now.strftime("%d%m%Y%H%M%S")
-    category_hash = f"{category_name}-{dt_string}"
-    return category_hash
 
 # Asynchronous processing function to process the product insertion in batches after reading the Excel
 async def _process_excel_async(file_path, batch_size):
@@ -213,11 +203,13 @@ async def get_or_create_vehicle_brand(session, brand_name, created_brands, resul
     stmt = select(VehicleBrand).where(VehicleBrand.brand_name == brand_name)
     result = await session.execute(stmt)
     existing_brand = result.scalars().first()
+    
+    treated_brand_name = brand_name.replace(" ", "")
 
     if existing_brand:
         brand_hash = existing_brand.hash_brand
     else:
-        brand_hash = hash_generator.generate_hash(brand_name)
+        brand_hash = hash_generator.generate_hash(treated_brand_name)
         new_brand = VehicleBrand(
             hash_brand=brand_hash,
             brand_name=brand_name,
@@ -279,11 +271,13 @@ async def get_or_create_category(session, category_name, created_categories, res
     stmt = select(Category).where(Category.name_category == category_name)
     result = await session.execute(stmt)
     existing_category = result.scalars().first()
+    
+    treated_category_hash = category_name.replace(" ", "")
 
     if existing_category:
         category_hash = existing_category.hash_category
     else:
-        category_hash = hash_generator.generate_hash(category_name)
+        category_hash = hash_generator.generate_hash(treated_category_hash)
         new_category = Category(
             hash_category=category_hash,
             name_category=category_name
@@ -390,14 +384,20 @@ def serialize_product(products):
         compatibility = []
         for comp in product.compatibilities:
             vehicle = comp.vehicle
-            brand = vehicle.vehicle_brand if hasattr(vehicle, 'vehicle_brand') else None
+            
+            # Get vehicle brand using the existing relationship
+            brand_name = None
+            if vehicle:
+                # Use the relationship established by the ORM
+                vehicle_brand = vehicle.vehicle_brand if hasattr(vehicle, 'vehicle_brand') else None
+                brand_name = vehicle_brand.brand_name if vehicle_brand else None
             
             vehicle_data = {
                 "vehicle_name": comp.vehicle_name,
                 "vehicle_type": vehicle.vehicle_type if vehicle else None,
                 "start_year": vehicle.start_year if vehicle else None,
                 "end_year": vehicle.end_year if vehicle else None,
-                "brand": brand.brand_name if brand else None
+                "brand": brand_name
             }
             compatibility.append(vehicle_data)
         
@@ -405,6 +405,8 @@ def serialize_product(products):
             "cod_product": product.cod_product,
             "name_product": product.name_product,
             "description": product.description,
+            "is_active": product.is_active,
+            "is_manufactured": product.is_manufactured,
             "bar_code": product.bar_code,
             "gear_quantity": product.gear_quantity,
             "gear_dimensions": product.gear_dimensions,

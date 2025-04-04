@@ -43,6 +43,7 @@ class Vehicle(db.Model):
     hash_brand = db.Column(db.String(255), db.ForeignKey('vehicle_brand.hash_brand'), nullable=False)
     
     compatibilities = db.relationship('Compatibility', backref='vehicle', lazy=True)
+    vehicle_brand = db.relationship('VehicleBrand', backref='vehicles', lazy=True)
     
 class Compatibility(db.Model):
     cod_product = db.Column(db.String(255), db.ForeignKey('product.cod_product'), primary_key=True)

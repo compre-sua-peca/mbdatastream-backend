@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
-from app.models import Vehicle
+from app.models import Vehicle, VehicleBrand
 from app.extensions import db
-from app.utils.functions import serialize_vehicle, serialize_meta_pagination
+from app.utils.functions import serialize_vehicle, serialize_meta_pagination, serialize_product
 
 
 vehicle_bp = Blueprint("vehicles", __name__)
@@ -32,6 +32,41 @@ def get_vehicles():
         "vehicles": vehicles,
         "meta": meta   
     }), 200
+    
+    
+@vehicle_bp.route("/by-brand/<string:hash_brand>", methods=["GET"])
+def get_by_vehicle_brand(hash_brand):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    
+    if not hash_brand:
+        return jsonify({"message": "Nenhuma marca de veículo informada"}), 400
+    
+    brand = VehicleBrand.query.filter(VehicleBrand.hash_brand == hash_brand).first()
+    
+    if not brand:
+        return jsonify({"message": f"Marca '{hash_brand}' não encontrada"}), 404
+    
+    pagination = Vehicle.query.filter_by(hash_brand=brand.hash_brand).paginate(
+        page=page, 
+        per_page=per_page, 
+        error_out=False
+    )
+    
+    vehicles = serialize_vehicle(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total,
+        pagination.pages,
+        pagination.page,
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "vehicles": vehicles,
+        "meta": meta
+    })
+    
 
 # Create a new vehicle
 @vehicle_bp.route("/", methods=["POST"])
