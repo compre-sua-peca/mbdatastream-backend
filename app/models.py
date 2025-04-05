@@ -12,6 +12,9 @@ class Category(db.Model):
 class Product(db.Model):
     cod_product = db.Column(db.String(255), primary_key=True)
     name_product = db.Column(db.String(255), nullable=False)
+    description = db.Column(db.String(2500), nullable=False)
+    is_active = db.Column(db.Boolean, default=True)
+    is_manufactured = db.Column(db.Boolean, default=True)
     bar_code = db.Column(db.BigInteger, nullable=False)
     gear_quantity = db.Column(db.Integer, nullable=False)
     gear_dimensions = db.Column(db.String(255), nullable=True)
@@ -37,8 +40,10 @@ class Vehicle(db.Model):
     start_year = db.Column(db.String(4), nullable=False)
     end_year = db.Column(db.String(4), nullable=True)
     vehicle_type = db.Column(db.String(255), nullable=False)
+    hash_brand = db.Column(db.String(255), db.ForeignKey('vehicle_brand.hash_brand'), nullable=False)
     
     compatibilities = db.relationship('Compatibility', backref='vehicle', lazy=True)
+    vehicle_brand = db.relationship('VehicleBrand', backref='vehicles', lazy=True)
     
 class Compatibility(db.Model):
     cod_product = db.Column(db.String(255), db.ForeignKey('product.cod_product'), primary_key=True)
@@ -46,3 +51,10 @@ class Compatibility(db.Model):
     
     def __repr__(self):
         return f"Compatibility('{self.cod_product}', '{self.vehicle_name}')"
+    
+class VehicleBrand(db.Model):
+    __tablename__ = "vehicle_brand"
+    hash_brand = db.Column(db.String(255), primary_key=True)
+    brand_name = db.Column(db.String(255), nullable=False)
+    brand_image = db.Column(db.String(255), nullable=True)
+    

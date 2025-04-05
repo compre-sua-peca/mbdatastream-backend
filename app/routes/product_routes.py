@@ -296,6 +296,9 @@ def get_product(cod_product):
     data = {
         "cod_product": product.cod_product,
         "name_product": product.name_product,
+        "description": product.description,
+        "is_active": product.is_active,
+        "is_manufactured": product.is_manufactured,
         "bar_code": product.bar_code,
         "gear_quantity": product.gear_quantity,
         "gear_dimensions": product.gear_dimensions,
