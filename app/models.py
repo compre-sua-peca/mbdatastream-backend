@@ -64,6 +64,8 @@ class User(db.Model):
     username = db.Column(db.String(150), nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
+    cnpj = db.Column(db.String(20), nullable=False)
+    whatsapp = db.Column(db.String(150), nullable=False)
     
     def serialize(self):
         return {
