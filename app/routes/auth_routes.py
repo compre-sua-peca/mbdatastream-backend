@@ -20,7 +20,7 @@ def register():
     existing_user = User.query.filter_by(email=email).first()
     
     if existing_user:
-        return jsonify({"message": "O email já está em uso", "user": existing_user}), 400
+        return jsonify({"message": "O email já está em uso", "user": existing_user.serialize()}), 400
     
     # Hash the user password before storing
     new_user = User(
@@ -50,7 +50,7 @@ def login():
     # Create a enw JWT token with the user's id as identity
     access_token = create_access_token(identity=str(user.id))
     
-    return jsonify({"message": "Login bem sucediddo", "acess_token": access_token}), 200
+    return jsonify({"message": "Login bem sucediddo", "access_token": access_token}), 200
 
 
 @auth_bp.route("/protected", methods=["GET"])

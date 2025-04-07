@@ -64,3 +64,9 @@ class User(db.Model):
     username = db.Column(db.String(150), nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
     password = db.Column(db.String(255), nullable=False)
+    
+    def serialize(self):
+        return {
+            "username": self.username,
+            "email": self.email
+        }
