@@ -1,6 +1,6 @@
 aiofiles==24.1.0
 aiomysql==0.2.0
-alembic==1.15.1
+alembic==1.14.1
 asyncpg==0.30.0
 blinker==1.9.0
 boto3==1.37.18
@@ -45,6 +45,5 @@ six==1.17.0
 SQLAlchemy==2.0.39
 typing_extensions==4.12.2
 tzdata==2025.1
-# Set urllib3 to a version compatible with botocore for Python 3.9:
 urllib3>=1.25.4,<1.27
 Werkzeug==3.1.3
