@@ -11,8 +11,7 @@ charset-normalizer==3.4.1
 click==8.1.8
 colorama==0.4.6
 cryptography==44.0.2
-# Remove the older 'dotenv' package – use python-dotenv instead:
-dotenv==0.9.9
+python-dotenv==1.0.1
 et_xmlfile==2.0.0
 Flask==3.1.0
 flask-cors==5.0.1
@@ -28,7 +27,6 @@ jmespath==1.0.1
 Mako==1.3.9
 MarkupSafe==3.0.2
 Naked==0.1.32
-# Adjust numpy to a valid, up‐to–date version for Python 3 (replace with your desired version)
 numpy==1.25.0
 openpyxl==3.1.5
 packaging==24.2
@@ -47,5 +45,6 @@ six==1.17.0
 SQLAlchemy==2.0.39
 typing_extensions==4.12.2
 tzdata==2025.1
-urllib3==2.3.0
+# Set urllib3 to a version compatible with botocore for Python 3.9:
+urllib3>=1.25.4,<1.27
 Werkzeug==3.1.3
