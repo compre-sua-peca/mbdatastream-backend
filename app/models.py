@@ -58,3 +58,17 @@ class VehicleBrand(db.Model):
     brand_name = db.Column(db.String(255), nullable=False)
     brand_image = db.Column(db.String(255), nullable=True)
     
+    
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), nullable=False)
+    email = db.Column(db.String(150), unique=True, nullable=False)
+    password = db.Column(db.String(255), nullable=False)
+    cnpj = db.Column(db.String(20), nullable=False)
+    whatsapp = db.Column(db.String(150), nullable=False)
+    
+    def serialize(self):
+        return {
+            "username": self.username,
+            "email": self.email
+        }
