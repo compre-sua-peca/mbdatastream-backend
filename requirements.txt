@@ -14,10 +14,10 @@ cryptography==44.0.2
 python-dotenv==1.0.1
 et_xmlfile==2.0.0
 Flask==2.3.0
-flask-cors==5.0.1
-Flask-JWT-Extended==4.7.1
-Flask-Migrate==4.1.0
-Flask-SQLAlchemy==3.1.1
+flask-cors==5.0.0
+Flask-JWT-Extended
+Flask-Migrate
+Flask-SQLAlchemy
 greenlet==3.1.1
 gunicorn==23.0.0
 idna==3.10
