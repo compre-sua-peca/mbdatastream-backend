@@ -70,13 +70,15 @@ def search_product(search_term):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
     
+    transformed_search_term = search_term.replace("|", "/")
+    
     if not search_term:
         return jsonify({"message": "Nenhum termo de busca fornecido"}), 400
     
     pagination = Product.query.filter(
-        Product.cod_product.ilike(f"%{search_term}%") |
-        Product.name_product.ilike(f"%{search_term}%") |
-        Product.cross_reference.ilike(f"%{search_term}%")
+        Product.cod_product.ilike(f"%{transformed_search_term}%") |
+        Product.name_product.ilike(f"%{transformed_search_term}%") |
+        Product.cross_reference.ilike(f"%{transformed_search_term}%")
     ).paginate(page=page, per_page=per_page, error_out=False)
     
     filtered_products = serialize_product(pagination.items)
