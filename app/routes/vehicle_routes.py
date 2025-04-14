@@ -34,7 +34,7 @@ def get_vehicles():
     }), 200
     
     
-@vehicle_bp.route("/by-brand/<string:hash_brand>", methods=["GET"])
+@vehicle_bp.route("/brand/<string:hash_brand>", methods=["GET"])
 def get_by_vehicle_brand(hash_brand):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)

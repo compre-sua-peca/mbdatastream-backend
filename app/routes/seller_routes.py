@@ -1,8 +1,8 @@
-from flask import Blueprint, jsonify, request
-import os
+from flask import Blueprint, jsonify
 from app.dal.dynamo_client import DynamoSingleton
 from app.models import Product
 from app.utils.functions import serialize_product
+
 
 seller_bp = Blueprint("sellers", __name__)
 

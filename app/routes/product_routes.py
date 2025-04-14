@@ -1,7 +1,7 @@
 import math
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text
-from app.models import Product, Category, Images, Compatibility, Vehicle
+from app.models import Product, Images
 from app.extensions import db
 from app.utils.functions import process_excel
 import tempfile
@@ -35,7 +35,7 @@ def get_products():
     }), 200
 
 
-@product_bp.route("/by-category/<string:hash_category>", methods=["GET"])
+@product_bp.route("/category/<string:hash_category>", methods=["GET"])
 def get_products_by_category(hash_category):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -96,7 +96,7 @@ def search_product(search_term):
     }), 200
 
 
-@product_bp.route("/by-compatibility/<string:vehicle_name>", methods=["GET"])
+@product_bp.route("/compatibility/<string:vehicle_name>", methods=["GET"])
 def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)

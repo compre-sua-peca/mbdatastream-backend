@@ -5,6 +5,9 @@ from app.dal.encryptor import HashGenerator
 from app.models import VehicleBrand
 from app.extensions import db
 from app.utils.functions import serialize_brand, serialize_meta_pagination
+from sqlalchemy import func
+from sqlalchemy.exc import SQLAlchemyError
+from flask import request, jsonify
 
 
 vehicle_brand_bp = Blueprint("vehicle_brands", __name__)
@@ -35,10 +38,22 @@ def get_all_vehicle_brands():
         "meta": meta
     }), 200
     
-from sqlalchemy import func
-from sqlalchemy.exc import SQLAlchemyError
-from flask import request, jsonify
-import os
+    
+@vehicle_brand_bp.route("/<string:hash_brand>")
+def get_vehicle_brand(hash_brand):
+    vehicle_brand = VehicleBrand.query.filter_by(hash_brand=hash_brand).first()
+    
+    if not vehicle_brand:
+        return jsonify({"message": "Não existe a marca informada"}), 404
+    
+    data = {
+        "brand_image": vehicle_brand.brand_image,
+        "brand_name": vehicle_brand.brand_name,
+        "hash_brand": vehicle_brand.hash_brand
+    }
+    
+    return jsonify(data), 200
+
 
 @vehicle_brand_bp.route("/", methods=["POST"])
 def create_vehicle_brand():
@@ -121,3 +136,16 @@ def create_vehicle_brand():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": str(e)}), 500
+
+
+@vehicle_brand_bp.route("/<string:hash_brand>", methods=["DELETE"])
+def delete_vehicle_brand(hash_brand):
+    vehicle_brand = VehicleBrand.query.filter_by(hash_brand).first()
+    
+    if not vehicle_brand:
+        return jsonify({"message": "Vehicle brand not found"}), 404
+    
+    db.session.delete(vehicle_brand)
+    db.session.commit()
+    
+    return jsonify({"message": "Vehicle brand deleted successfully"}), 200

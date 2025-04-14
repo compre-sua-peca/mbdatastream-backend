@@ -5,6 +5,7 @@ from app.extensions import db
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 
+
 category_bp = Blueprint("categories", __name__)
 
 
