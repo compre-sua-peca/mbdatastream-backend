@@ -1,7 +1,7 @@
 import math
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text
-from app.models import Product, Category, Images, Compatibility, Vehicle
+from app.models import Product, Images
 from app.extensions import db
 from app.utils.functions import process_excel
 import tempfile
@@ -13,7 +13,7 @@ from app.utils.functions import is_image_file, extract_existing_product_codes, s
 product_bp = Blueprint("products", __name__)
 
 
-@product_bp.route("/get-all", methods=["GET"])
+@product_bp.route("/all", methods=["GET"])
 def get_products():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -35,7 +35,7 @@ def get_products():
     }), 200
 
 
-@product_bp.route("/by-category/<string:hash_category>", methods=["GET"])
+@product_bp.route("/category/<string:hash_category>", methods=["GET"])
 def get_products_by_category(hash_category):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -70,13 +70,15 @@ def search_product(search_term):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
     
+    transformed_search_term = search_term.replace("|", "/")
+    
     if not search_term:
         return jsonify({"message": "Nenhum termo de busca fornecido"}), 400
     
     pagination = Product.query.filter(
-        Product.cod_product.ilike(f"%{search_term}%") |
-        Product.name_product.ilike(f"%{search_term}%") |
-        Product.cross_reference.ilike(f"%{search_term}%")
+        Product.cod_product.ilike(f"%{transformed_search_term}%") |
+        Product.name_product.ilike(f"%{transformed_search_term}%") |
+        Product.cross_reference.ilike(f"%{transformed_search_term}%")
     ).paginate(page=page, per_page=per_page, error_out=False)
     
     filtered_products = serialize_product(pagination.items)
@@ -94,7 +96,7 @@ def search_product(search_term):
     }), 200
 
 
-@product_bp.route("/by-compatibility/<string:vehicle_name>", methods=["GET"])
+@product_bp.route("/compatibility/<string:vehicle_name>", methods=["GET"])
 def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
