@@ -272,12 +272,12 @@ async def get_or_create_category(session, category_name, created_categories, res
     result = await session.execute(stmt)
     existing_category = result.scalars().first()
     
-    treated_category_hash = category_name.replace(" ", "")
+    treated_category_name = category_name.replace(" ", "")
 
     if existing_category:
         category_hash = existing_category.hash_category
     else:
-        category_hash = hash_generator.generate_hash(treated_category_hash)
+        category_hash = hash_generator.generate_hash(treated_category_name)
         new_category = Category(
             hash_category=category_hash,
             name_category=category_name

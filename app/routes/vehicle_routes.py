@@ -8,7 +8,7 @@ vehicle_bp = Blueprint("vehicles", __name__)
 
 
 # List all vehicles
-@vehicle_bp.route("/get-all", methods=["GET"])
+@vehicle_bp.route("/all", methods=["GET"])
 def get_vehicles():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)

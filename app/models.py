@@ -3,6 +3,7 @@ from .extensions import db
 class Category(db.Model):
     hash_category = db.Column(db.String(255), primary_key=True)
     name_category = db.Column(db.String(255), nullable=False)
+    display_order = db.Column(db.Integer, default=0, nullable=False)
     
     products = db.relationship('Product', backref='category', lazy=True)
     
@@ -57,6 +58,7 @@ class VehicleBrand(db.Model):
     hash_brand = db.Column(db.String(255), primary_key=True)
     brand_name = db.Column(db.String(255), nullable=False)
     brand_image = db.Column(db.String(255), nullable=True)
+    display_order = db.Column(db.Integer, default=0, nullable=False)
     
     
 class User(db.Model):
