@@ -1,7 +1,8 @@
 from flask import Blueprint, jsonify, request
-from app.models import Vehicle, VehicleBrand
+from sqlalchemy import func
+from app.models import Compatibility, Vehicle, VehicleBrand
 from app.extensions import db
-from app.utils.functions import serialize_vehicle, serialize_meta_pagination, serialize_product
+from app.utils.functions import serialize_vehicle, serialize_meta_pagination, serialize_product, serialize_vehicle_product_count
 
 
 vehicle_bp = Blueprint("vehicles", __name__)
@@ -33,6 +34,37 @@ def get_vehicles():
         "meta": meta   
     }), 200
     
+    
+@vehicle_bp.route("/all-count-products", methods=["GET"])
+def get_vehicles_count_prods():
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    
+    # Build a query that returns (Vehicle, product_count)
+    query = db.session.query(
+        Vehicle,
+        func.count(Compatibility.cod_product).label("product_count")
+    )\
+    .outerjoin(Compatibility, Compatibility.vehicle_name == Vehicle.vehicle_name)\
+    .group_by(Vehicle.vehicle_name)
+    
+    # Paginate the query directly
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    
+    vehicles_product_count = serialize_vehicle_product_count(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total,
+        pagination.pages,
+        pagination.page,
+        pagination.per_page
+    )
+    
+    return jsonify({
+        "vehicles": vehicles_product_count,
+        "meta": meta
+    })
+
     
 @vehicle_bp.route("/brand/<string:hash_brand>", methods=["GET"])
 def get_by_vehicle_brand(hash_brand):

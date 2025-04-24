@@ -446,6 +446,19 @@ def serialize_brand(brands):
     
     return result
 
+def serialize_vehicle_product_count(vehicles):
+    result = []
+    
+    for vehicle, product_count in vehicles:
+        result.append({
+            "vehicle_name": vehicle.vehicle_name,
+            "start_year": vehicle.start_year,
+            "end_year": vehicle.end_year,
+            "vehicle_type": vehicle.vehicle_type,
+            "product_count": product_count
+        })
+        
+    return result
 
 def serialize_meta_pagination(total, pages, page, per_page):
     
