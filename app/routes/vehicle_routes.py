@@ -34,8 +34,8 @@ def get_vehicles():
         "meta": meta   
     }), 200
     
-    
-@vehicle_bp.route("/all-count-products", methods=["GET"])
+
+@vehicle_bp.route("/all-count", methods=["GET"])
 def get_vehicles_count_prods():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
