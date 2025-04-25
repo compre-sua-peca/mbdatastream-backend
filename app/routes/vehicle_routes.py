@@ -8,34 +8,7 @@ from app.utils.functions import serialize_vehicle, serialize_meta_pagination, se
 vehicle_bp = Blueprint("vehicles", __name__)
 
 
-# List all vehicles
 @vehicle_bp.route("/all", methods=["GET"])
-def get_vehicles():
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 16, type=int)
-    
-    pagination = Vehicle.query.paginate(
-        page=page, 
-        per_page=per_page, 
-        error_out=False
-    )
-   
-    vehicles = serialize_vehicle(pagination.items)
-    
-    meta = serialize_meta_pagination(
-        pagination.total, 
-        pagination.pages, 
-        pagination.page, 
-        pagination.per_page
-    )
-        
-    return jsonify({
-        "vehicles": vehicles,
-        "meta": meta   
-    }), 200
-    
-
-@vehicle_bp.route("/all-count", methods=["GET"])
 def get_vehicles_count_prods():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -65,6 +38,33 @@ def get_vehicles_count_prods():
         "meta": meta
     })
 
+# List all vehicles
+"""
+@vehicle_bp.route("/all", methods=["GET"])
+def get_vehicles():
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    
+    pagination = Vehicle.query.paginate(
+        page=page, 
+        per_page=per_page, 
+        error_out=False
+    )
+   
+    vehicles = serialize_vehicle(pagination.items)
+    
+    meta = serialize_meta_pagination(
+        pagination.total, 
+        pagination.pages, 
+        pagination.page, 
+        pagination.per_page
+    )
+        
+    return jsonify({
+        "vehicles": vehicles,
+        "meta": meta   
+    }), 200
+"""
     
 @vehicle_bp.route("/brand/<string:hash_brand>", methods=["GET"])
 def get_by_vehicle_brand(hash_brand):
