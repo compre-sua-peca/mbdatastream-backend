@@ -268,6 +268,101 @@ def get_by_compatibility(vehicle_name):
         "products": products,
         "meta": meta
     }), 200
+    
+
+@product_bp.route("/compatibility-all/<string:vehicle_name>", methods=["GET"])
+def get_all_by_compatibility(vehicle_name):
+    if not vehicle_name:
+        return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
+
+    upper_vehicle_name = vehicle_name.upper()
+
+    # First get the list of product IDs that match the compatibility
+    product_ids_sql = text("""
+        SELECT DISTINCT p.cod_product
+        FROM product p
+        JOIN compatibility c ON p.cod_product = c.cod_product
+        JOIN vehicle v ON c.vehicle_name = v.vehicle_name
+        WHERE v.vehicle_name LIKE :vehicle_pattern
+    """)
+
+    product_ids_result = db.session.execute(
+        product_ids_sql,
+        {
+            "vehicle_pattern": f"%{upper_vehicle_name}%"
+        }
+    )
+
+    product_ids = [row[0] for row in product_ids_result]
+
+    # If no products found, return empty result
+    if not product_ids:
+        return jsonify({
+            "products": []
+        }), 200
+
+    # Then get full details for these products, including all images
+    details_sql = text("""
+        SELECT 
+            p.*,
+            ct.name_category AS category,
+            img.url,
+            img.cod_product AS image_cod_product,
+            img.id_image
+        FROM product p
+        JOIN category ct ON ct.hash_category = p.hash_category
+        LEFT JOIN images img ON p.cod_product = img.cod_product
+        WHERE p.cod_product IN :product_ids
+    """)
+
+    details_result = db.session.execute(
+        details_sql,
+        {
+            "product_ids": tuple(product_ids)
+        }
+    )
+
+    # Organize the results by product
+    products_dict = {}
+    for row in details_result:
+        row_dict = row._asdict()
+        product_id = row_dict['cod_product']
+
+        if product_id not in products_dict:
+            # Initialize product data
+            products_dict[product_id] = {
+                key: row_dict[key] for key in row_dict
+                if key not in ('url', 'id_image')
+            }
+            products_dict[product_id]['images'] = []
+
+        # Add image URL if available
+        if row_dict['url']:
+            products_dict[product_id]['images'].append(row_dict['url'])
+
+    # Convert dictionary to list
+    products_list = list(products_dict.values())
+    
+    # products = serialize_product(products_list)
+
+    # Get total for pagination
+    count_sql = text("""
+        SELECT COUNT(DISTINCT p.cod_product) as total
+        FROM product p
+        JOIN compatibility c ON p.cod_product = c.cod_product
+        JOIN vehicle v ON c.vehicle_name = v.vehicle_name
+        WHERE v.vehicle_name LIKE :vehicle_pattern
+    """)
+
+    count_result = db.session.execute(
+        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first() 
+    
+    total = count_result.total
+
+    return jsonify({
+        "products": products_list,
+        "total": total
+    }), 200
 
 
 @product_bp.route("/", methods=["POST"])
