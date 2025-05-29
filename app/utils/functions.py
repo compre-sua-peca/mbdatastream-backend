@@ -1,23 +1,40 @@
+from itertools import zip_longest
+import re
 import pandas as pd
 import asyncio
 from app.models import Category, Product, Vehicle, Compatibility, Images, VehicleBrand
 from app.extensions import db
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from app.dal.encryptor import HashGenerator
 
 """ --------------------------------- Functions to handle product, category, compatibility and vehicles insertions on the database --------------------------------- """
 # Extract compatibilities from the compat column from Excel and tranform it in an array/list
-def extract_compat_to_list(compat_str):
+
+
+def extract_compat_to_list(compat_str: str) -> list[str]:
+    """
+    Turns strings like:
+      "[ '1974' ; '1973' ; '1984' ]"
+      "'Desconhecido', 'Desconhecido', 'Desconhecido'"
+      "A,B,C"
+      ""
+    into lists of clean values: ["1974","1973","1984"], ["Desconhecido",…], ["A","B","C"], []
+    """
+    # 1) guard clauses
     if not compat_str or pd.isna(compat_str):
         return []
 
-    trimmed = compat_str.strip("[]")
-    if not trimmed:
-        return []
+    # 2) remove outer brackets, parens, and any quotes
+    cleaned = re.sub(r"^[\[\(\s]*|[\]\)\s]*$", "", compat_str)  # strip [] or ()
+    cleaned = cleaned.replace("'", "").replace('"', "")
 
-    items = trimmed.split(";")
-    vehicles = [item.strip().strip("'").strip() for item in items]
-    return vehicles
+    # 3) split on semicolons OR commas (one or more)
+    parts = re.split(r"[;,]+", cleaned)
+
+    # 4) strip whitespace and drop blank entries
+    return [p.strip() for p in parts if p.strip()]
 
 # Asynchronous processing function to process the product insertion in batches after reading the Excel
 async def _process_excel_async(file_path, batch_size):
@@ -28,7 +45,7 @@ async def _process_excel_async(file_path, batch_size):
         # Check if all required columns exist
         required_columns = [
             "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "CROSS_REF",
-            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND"
+            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND", "ID_SELLER"
         ]
 
         # Convert column names to uppercase
@@ -57,7 +74,7 @@ async def _process_excel_async(file_path, batch_size):
         total_rows = len(df)
         batches = [df[i:i+batch_size]
                    for i in range(0, total_rows, batch_size)]
-        
+
         print(batches)
 
         # Store created categories, brands and vehicles across batches
@@ -126,7 +143,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             created_categories,
             results
         )
-        
+
         cod_product = await get_or_create_product(session, row, category_hash, results)
 
         # Extract vehicle compatibility info
@@ -137,55 +154,51 @@ async def process_row(index, row, session, created_categories, created_vehicles,
         vehicle_brands_string = row.get("VEHICLE_BRAND", "")
 
         # Extract the values from the strings to lists
-        vehicles_names_list = extract_compat_to_list(vehicles_names_string)
-        start_year_list = extract_compat_to_list(start_year_string)
-        end_year_list = extract_compat_to_list(end_year_string)
-        vehicle_type_list = extract_compat_to_list(vehicle_type_string)
-        vehicle_brands_list = extract_compat_to_list(vehicle_brands_string)
+        names = extract_compat_to_list(vehicles_names_string)
+        starts = extract_compat_to_list(start_year_string)
+        ends = extract_compat_to_list(end_year_string)
+        types = extract_compat_to_list(vehicle_type_string)
+        brands = extract_compat_to_list(vehicle_brands_string)
 
-        # Process vehicle compatibilities
-        compat_qtd = len(vehicles_names_list)
-        for i in range(compat_qtd):
-            if (i >= len(start_year_list) or
-                i >= len(end_year_list) or
-                i >= len(vehicle_type_list) or
-                i >= len(vehicle_brands_list)):
+        # Process vehicle compatibilities with zip_longest to grant same lengths, nulling if not equal
+        for name, start, end, vtype, brand in zip_longest(
+            names, starts, ends, types, brands, fillvalue=None
+        ):
+
+            # normalize & skip empties
+            if not (name and brand):
                 continue
+            name  = name.strip()
+            brand = brand.strip()
 
-            vehicle_name = vehicles_names_list[i].strip()
-            vehicle_brand = vehicle_brands_list[i].strip()
+            # normalize unknown years
+            def norm_year(y):
+                if not y or y.lower().startswith("desconhecido"):
+                    return None
+                return y.strip()
 
-            # Skip empty vehicle names or brands
-            if not vehicle_name or not vehicle_brand:
-                continue
+            start = norm_year(start)
+            end   = norm_year(end)
 
-            # Create or get brand first
-            brand_hash = await get_or_create_vehicle_brand(
-                session,
-                vehicle_brand,
-                created_brands,
-                results
-            )
+            # wrap in no_autoflush to avoid the Query-invoked autoflush error
+            with session.no_autoflush:
+                brand_hash = await get_or_create_vehicle_brand(
+                    session, brand, created_brands, results
+                )
+                await get_or_create_vehicle(
+                    session,
+                    name,
+                    start,
+                    end,
+                    vtype.strip() if vtype else None,
+                    brand_hash,
+                    created_vehicles,
+                    results
+                )
 
-            # Create or get vehicle
-            await get_or_create_vehicle(
-                session,
-                vehicle_name,
-                start_year_list[i].strip(),
-                end_year_list[i].strip() if end_year_list[i] not in [
-                    "Desconhecido", "Desconhecido.", "/Desconhecido"] else None,
-                vehicle_type_list[i].strip(),
-                brand_hash,
-                created_vehicles,
-                results
-            )
-
-            # Create compatibility if needed
+            # now it’s safe to commit/flush or do another query
             await get_or_create_compatibility(
-                session,
-                cod_product,
-                vehicle_name,
-                results
+                session, cod_product, name, results
             )
 
     except Exception as e:
@@ -231,6 +244,28 @@ async def get_or_create_product(session, row, category_hash, results):
     if name_check == "ITEM DESCONTINUADO":
         name_product = name_product.split("-")[1].strip()
         is_manufactured = False
+        
+    bar_code = row["BAR_CODE"]
+    
+    # Checks if bar_code is actually valid
+    if pd.isna(bar_code):
+        bar_code = None
+    else: 
+        try:
+            bar_code = int(bar_code)
+        except(ValueError, TypeError):
+            bar_code = None
+            
+    gear_quantity = row["GEAR_QUANTITY"]
+    
+    # Checks if gear_quantity is actually valid
+    if pd.isna(gear_quantity):
+        gear_quantity = None
+    else:
+        try:
+            gear_quantity = int(gear_quantity)
+        except(ValueError, TypeError):
+            gear_quantity = None
     
     # Create product dict
     product_dict = {
@@ -238,11 +273,12 @@ async def get_or_create_product(session, row, category_hash, results):
         "name_product": name_product,
         "description": row["DESCRIPTION"],
         "is_manufactured": is_manufactured,
-        "bar_code": row["BAR_CODE"],
-        "gear_quantity": None if pd.isna(row["GEAR_QUANTITY"]) else row["GEAR_QUANTITY"],
+        "bar_code": bar_code,
+        "gear_quantity": gear_quantity,
         "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
         "cross_reference": None if pd.isna(row["CROSS_REF"]) else row["CROSS_REF"],
-        "hash_category": category_hash
+        "hash_category": category_hash,
+        "id_seller": row["ID_SELLER"]
     }
 
     # Check if product exists before adding
@@ -259,34 +295,63 @@ async def get_or_create_product(session, row, category_hash, results):
     return product_dict["cod_product"]
 
 
-async def get_or_create_category(session, category_name, created_categories, results):
-    """Get an existing category or create a new one"""
-    hash_generator = HashGenerator()
-    
-    # Check cache first
-    if category_name in created_categories:
-        return created_categories[category_name]
+async def get_or_create_category(session, raw_name, created_categories, results):
+    """
+    Return the hash of an existing or newly-created Category.
+    Guarantees no duplicate INSERT for same logical name.
+    """
 
-    # Check database
-    stmt = select(Category).where(Category.name_category == category_name)
+    # Normalize the name: strip whitespace and unify casing
+    name_norm = raw_name.strip().upper()
+    if not name_norm:
+        raise ValueError("Empty category name!")
+
+    # Check in-memory cache
+    if name_norm in created_categories:
+        return created_categories[name_norm]
+
+    # Check the database by the normalized name
+    stmt = select(Category).where(Category.name_category == name_norm)
     result = await session.execute(stmt)
-    existing_category = result.scalars().first()
-    
-    treated_category_name = category_name.replace(" ", "")
+    existing = result.scalars().first()
 
-    if existing_category:
-        category_hash = existing_category.hash_category
+    if existing:
+        cat_hash = existing.hash_category
+
     else:
-        category_hash = hash_generator.generate_hash(treated_category_name)
-        new_category = Category(
-            hash_category=category_hash,
-            name_category=category_name
+        # Generate a hash, then attempt INSERT
+        cat_hash = HashGenerator().generate_hash(name_norm)
+        new_cat = Category(
+            hash_category=cat_hash,
+            name_category=name_norm,
+            display_order=0
         )
-        session.add(new_category)
-        results["categories_created"] += 1
+        
+        session.add(new_cat)
+        
+        try:
+            await session.flush()   # push to DB so that IntegrityError happens now
+            
+            results["categories_created"] += 1
+            
+        except IntegrityError:
+            # If someone else inserted the same hash concurrently,
+            # roll back that insert, then re-query for the existing row:
+            await session.rollback()
+            stmt2 = select(Category).where(Category.hash_category == cat_hash)
+            result2 = await session.execute(stmt2)
+            existing = result2.scalars().first()
+            if existing:
+                cat_hash = existing.hash_category
+            else:
+                # This really shouldn't happen
+                raise
 
-    created_categories[category_name] = category_hash
-    return category_hash
+    # Cache and return
+    created_categories[name_norm] = cat_hash
+    
+    return cat_hash
+
 
 
 async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, hash_brand, created_vehicles, results):
@@ -294,6 +359,14 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
     # Check if already processed
     if vehicle_name in created_vehicles:
         return
+            
+    # Check if brand exist
+    # brand_check = await session.execute(
+    #     select(VehicleBrand).where(VehicleBrand.hash_brand == hash_brand)
+    # )
+    # brand = brand_check.scalars().first()
+    # if not brand:
+    #     raise ValueError(f"Brand with hash '{hash_brand}' does not exist for vehicle '{vehicle_name}'")
 
     # Check database
     stmt = select(Vehicle).where(Vehicle.vehicle_name == vehicle_name)
@@ -446,6 +519,19 @@ def serialize_brand(brands):
     
     return result
 
+def serialize_vehicle_product_count(vehicles):
+    result = []
+    
+    for vehicle, product_count in vehicles:
+        result.append({
+            "vehicle_name": vehicle.vehicle_name,
+            "start_year": vehicle.start_year,
+            "end_year": vehicle.end_year,
+            "vehicle_type": vehicle.vehicle_type,
+            "product_count": product_count
+        })
+        
+    return result
 
 def serialize_meta_pagination(total, pages, page, per_page):
     
