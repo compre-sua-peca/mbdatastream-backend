@@ -18,14 +18,14 @@ class Product(db.Model):
     description = db.Column(db.String(2500), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     is_manufactured = db.Column(db.Boolean, default=True)
-    bar_code = db.Column(db.BigInteger, nullable=False)
-    gear_quantity = db.Column(db.Integer, nullable=False)
+    bar_code = db.Column(db.BigInteger, nullable=True)
+    gear_quantity = db.Column(db.Integer, nullable=True)
     gear_dimensions = db.Column(db.String(255), nullable=True)
     cross_reference = db.Column(db.String(2500), nullable=True)
     hash_category = db.Column(db.String(255), db.ForeignKey(
         'category.hash_category', onupdate="CASCADE"), nullable=False)
-    # id_seller = db.Column(db.Integer, db.ForeignKey(
-    #     'seller.id', onupdate="CASCADE", ondelete="CASCADE"), default=1, nullable=False)
+    id_seller = db.Column(db.Integer, db.ForeignKey(
+        'seller.id', onupdate="CASCADE", ondelete="CASCADE"), nullable=True)
 
     images = db.relationship('Images', backref='product', lazy=True)
     compatibilities = db.relationship(
@@ -47,7 +47,7 @@ class Images(db.Model):
 
 class Vehicle(db.Model):
     vehicle_name = db.Column(db.String(255), primary_key=True)
-    start_year = db.Column(db.String(4), nullable=False)
+    start_year = db.Column(db.String(4), nullable=True)
     end_year = db.Column(db.String(4), nullable=True)
     vehicle_type = db.Column(db.String(255), nullable=False)
     hash_brand = db.Column(db.String(255), db.ForeignKey(

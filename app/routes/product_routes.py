@@ -411,6 +411,7 @@ def create_products_from_csv():
             "message": "Produtos criados com sucesso",
             "data": products
         }), 201
+        
     finally:
         # Always ensure the temporary file is removed
         if os.path.exists(temp_path):
