@@ -40,6 +40,7 @@ def get_products():
 def get_products_by_category(hash_category):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
+    id_seller = request.args.get("id_seller", type=int)
     is_manufactured_str = request.args.get("is_manufactured")
     
     is_manufactured = None
@@ -49,13 +50,16 @@ def get_products_by_category(hash_category):
     transformed_hash_category = hash_category.replace("|", "/")
     
     pagination = None
+    
+    print(id_seller)
 
     if not hash_category:
         return jsonify({"message": "Nenhuma categoria fornecida"}), 400
     
     if is_manufactured is None:
         pagination = Product.query.filter_by(
-            hash_category=transformed_hash_category
+            hash_category=transformed_hash_category,
+            id_seller=id_seller
         ).paginate(
             page=page, per_page=per_page, error_out=False
         )
@@ -63,12 +67,15 @@ def get_products_by_category(hash_category):
     else:
         pagination = Product.query.filter(
             Product.hash_category == transformed_hash_category,
-            Product.is_manufactured == is_manufactured
+            Product.is_manufactured == is_manufactured,
+            Product.id_seller == id_seller
         ).paginate(
             page=page, per_page=per_page, error_out=False
         )
 
     products = serialize_product(pagination.items)
+    
+    print(products)
 
     meta = serialize_meta_pagination(
         pagination.total,
@@ -88,6 +95,7 @@ def search_product(search_term):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
     is_manufactured_str = request.args.get("is_manufactured")
+    id_seller = request.args.get("id_seller")
     
     is_manufactured = None
     if is_manufactured_str is not None:
@@ -102,10 +110,13 @@ def search_product(search_term):
 
     if is_manufactured is None:
         pagination = Product.query.filter(
-            Product.cod_product.ilike(f"%{transformed_search_term}%") |
-            Product.name_product.ilike(f"%{transformed_search_term}%") |
-            Product.cross_reference.ilike(f"%{transformed_search_term}%") |
-            Product.bar_code.ilike(f"%{transformed_search_term}%")
+            or_(
+                Product.cod_product.ilike(f"%{transformed_search_term}%") |
+                Product.name_product.ilike(f"%{transformed_search_term}%") |
+                Product.cross_reference.ilike(f"%{transformed_search_term}%") |
+                Product.bar_code.ilike(f"%{transformed_search_term}%")
+            ),
+            Product.id_seller == id_seller
         ).paginate(page=page, per_page=per_page, error_out=False)
 
     else:
@@ -116,7 +127,8 @@ def search_product(search_term):
                 Product.cross_reference.ilike(f"%{transformed_search_term}%"),
                 Product.bar_code.ilike(f"%{transformed_search_term}%"),
             ), 
-            Product.is_manufactured == is_manufactured
+            Product.is_manufactured == is_manufactured,
+            Product.id_seller == id_seller
         ).paginate(page=page, per_page=per_page, error_out=False)
 
     filtered_products = serialize_product(pagination.items)
@@ -138,6 +150,7 @@ def search_product(search_term):
 def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
+    id_seller = request.args.get("id_seller", type=int)
     offset = (page - 1) * per_page
 
     if not vehicle_name:
@@ -151,7 +164,7 @@ def get_by_compatibility(vehicle_name):
         FROM product p
         JOIN compatibility c ON p.cod_product = c.cod_product
         JOIN vehicle v ON c.vehicle_name = v.vehicle_name
-        WHERE v.vehicle_name LIKE :vehicle_pattern
+        WHERE v.vehicle_name LIKE :vehicle_pattern AND p.id_seller = :id_seller
         LIMIT :limit OFFSET :offset
     """)
 
@@ -159,6 +172,7 @@ def get_by_compatibility(vehicle_name):
         product_ids_sql,
         {
             "vehicle_pattern": f"%{upper_vehicle_name}%",
+            "id_seller": id_seller,
             "limit": per_page,
             "offset": offset
         }
@@ -247,11 +261,11 @@ def get_by_compatibility(vehicle_name):
         FROM product p
         JOIN compatibility c ON p.cod_product = c.cod_product
         JOIN vehicle v ON c.vehicle_name = v.vehicle_name
-        WHERE v.vehicle_name LIKE :vehicle_pattern
+        WHERE v.vehicle_name LIKE :vehicle_pattern AND p.id_seller = :id_seller
     """)
 
     count_result = db.session.execute(
-        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first()
+        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%", "id_seller": id_seller}).first()
     total = count_result.total
 
     # Calculate pagination metadata
@@ -276,6 +290,8 @@ def get_all_by_compatibility(vehicle_name):
         return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
 
     upper_vehicle_name = vehicle_name.upper()
+    
+    id_seller = request.args.get("id_seller", type=int)
 
     # First get the list of product IDs that match the compatibility
     product_ids_sql = text("""
@@ -283,13 +299,14 @@ def get_all_by_compatibility(vehicle_name):
         FROM product p
         JOIN compatibility c ON p.cod_product = c.cod_product
         JOIN vehicle v ON c.vehicle_name = v.vehicle_name
-        WHERE v.vehicle_name LIKE :vehicle_pattern
+        WHERE v.vehicle_name LIKE :vehicle_pattern AND p.id_seller = :id_seller
     """)
 
     product_ids_result = db.session.execute(
         product_ids_sql,
         {
-            "vehicle_pattern": f"%{upper_vehicle_name}%"
+            "vehicle_pattern": f"%{upper_vehicle_name}%",
+            "id_seller": id_seller
         }
     )
 
@@ -351,11 +368,11 @@ def get_all_by_compatibility(vehicle_name):
         FROM product p
         JOIN compatibility c ON p.cod_product = c.cod_product
         JOIN vehicle v ON c.vehicle_name = v.vehicle_name
-        WHERE v.vehicle_name LIKE :vehicle_pattern
+        WHERE v.vehicle_name LIKE :vehicle_pattern AND p.id_seller = :id_seller
     """)
 
     count_result = db.session.execute(
-        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first() 
+        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%", "id_seller": id_seller}).first() 
     
     total = count_result.total
 
