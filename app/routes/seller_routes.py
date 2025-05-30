@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 from app.dal.dynamo_client import DynamoSingleton
 from app.models import Product
 from app.utils.functions import serialize_product
@@ -25,9 +25,12 @@ def get_showcase():
     
     table = "CatalogSellers"
     key_name = "seller_domain"
-    key_value = "mobensani"
+    # key_value = "mobensani"
     
-    seller = dynamo_client.get_item_by_hash_key(table, key_name, key_value)
+    id_seller = request.args.get("id_seller", type=int)
+    seller_domain = request.args.get("seller_domain", type=str)
+    
+    seller = dynamo_client.get_item_by_hash_key(table, key_name, seller_domain)
     
     tags = seller.get("tags", [])
     
@@ -43,7 +46,10 @@ def get_showcase():
         # Ensure that the tag id is the correct type (assuming Product.hash_category is stored as a string)
         category_id = str(tag_id)
         
-        pagination = Product.query.filter_by(hash_category=category_id).limit(per_page).all()
+        pagination = Product.query.filter_by(
+            hash_category=category_id,
+            id_seller=id_seller
+        ).limit(per_page).all()
         product = serialize_product(pagination)
         
         showcase[tag_name] = product
