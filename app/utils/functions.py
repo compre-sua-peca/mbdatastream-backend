@@ -519,6 +519,17 @@ def serialize_brand(brands):
     
     return result
 
+def serialize_category(categories):
+    result = []
+    
+    for category in categories:
+        result.append({
+            "hash_category": category.hash_category,
+            "name_category": category.name_category
+        })
+        
+    return result
+
 def serialize_vehicle_product_count(vehicles):
     result = []
     

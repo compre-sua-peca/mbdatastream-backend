@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.dal.encryptor import HashGenerator
 from app.models import Category, SellerCategories
+from app.utils.functions import serialize_category
 from app.extensions import db
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,23 +12,39 @@ category_bp = Blueprint("categories", __name__)
 
 @category_bp.route("/all", methods=["GET"])
 def get_all_categories():
-    categories = Category.query.order_by(Category.display_order).all()
+    # Read and validate the id_seller parameter
+    id_seller = request.args.get("id_seller", type=int)
+    
+    if not id_seller:
+        return jsonify({"error": "Query parameter 'id_seller' (integer) is required."}), 400
 
-    results = []
+    # Join Category ← SellerCategories for this seller, ordered by display_order
+    category_rows = (
+        db.session.query(Category)
+        .join(SellerCategories, SellerCategories.hash_category == Category.hash_category)
+        .filter(SellerCategories.id_seller == id_seller)
+        .order_by(Category.display_order)
+        .all()
+    )
 
-    if categories:
-        for category in categories:
-            results.append({
-                "hash_category": category.hash_category,
-                "name_category": category.name_category
-            })
+    # Run your serializer to turn the Category models into plain dicts
+    categories = serialize_category(category_rows)
 
-    return jsonify(results), 200
+    # If the list is empty, tell the client “no categories found”
+    if not categories:
+        return jsonify({"error": "No categories found for that seller."}), 200
+
+    # Return a JSON object with a "categories" field
+    return jsonify({
+        "categories": categories
+    }), 200
+
 
 # Create a new category
 @category_bp.route("/", methods=["POST"])
 def create_category():
     data = request.get_json()
+    id_seller = request.args.get("id_seller", type=int)
     
     hash_generator = HashGenerator()
     
@@ -52,7 +69,13 @@ def create_category():
                 display_order=new_order
             )
             
+            new_seller_category = SellerCategories(
+                id_seller=id_seller,
+                hash_category=hash_category
+            )
+            
             db.session.add(new_category)
+            db.session.add(new_seller_category)
         db.session.commit()
     
     except SQLAlchemyError as e:
