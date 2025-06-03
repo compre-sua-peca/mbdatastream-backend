@@ -12,6 +12,8 @@ def setup_async_sqlalchemy(app):
     # Get the database URI from Flask config
     db_uri = app.config['SQLALCHEMY_DATABASE_URI']
     
+    print(db_uri)
+    
     # Convert database URIs to their async equivalents
     if db_uri.startswith('sqlite:'):
         async_uri = db_uri.replace('sqlite:', 'sqlite+aiosqlite:')

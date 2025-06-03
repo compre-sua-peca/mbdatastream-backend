@@ -96,3 +96,30 @@ class Seller(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(75), unique=True, nullable=False)
     cnpj = db.Column(db.String(20), unique=True, nullable=False)
+    
+    
+class SellerVehicles(db.Model):
+    id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+    vehicle_name = db.Column(db.String(255), db.ForeignKey('vehicle.vehicle_name', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+    
+    sellers = db.relationship(
+        'Seller', backref='seller', lazy=True
+    )  
+    vehicles = db.relationship(
+        'Vehicle', backref='vehicle', lazy=True
+    )
+    
+    
+class SellerBrands(db.Model):
+    id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+    hash_brand = db.Column(db.String(255), db.ForeignKey(
+        'vehicle_brand.hash_brand', onupdate="CASCADE"), nullable=False)
+    
+    sellers = db.relationship(
+        'Seller', backref='seller', lazy=True
+    )
+    vehicle_brand = db.relationship(
+        'VehicleBrand', backref='brands', lazy=True
+    )
+    
+    
