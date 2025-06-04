@@ -4,6 +4,7 @@ from Crypto.Hash import SHA256
 from numpy import pad
 import hashlib
 
+
 class HashGenerator:
     def __init__(self):
         # Get the secret for brand encryption from an environment variable
@@ -24,8 +25,10 @@ class HashGenerator:
         Encrypts the brand name deterministically using AES-256-CBC.
         Returns the hash in the format: "brand_name-encrypted_hex"
         """
+        treated_name = name.replace(" ", "")
+        
         try:
-            iv = self.generate_iv(name)
+            iv = self.generate_iv(treated_name)
             cipher = AES.new(self.ENCRYPTION_BRAND_KEY, AES.MODE_CBC, iv)
             
             padded_data = pad(name.encode(), AES.block_size)
@@ -33,11 +36,11 @@ class HashGenerator:
             encrypted_bytes = cipher.encrypt(padded_data)
             encrypted_hex = encrypted_bytes.hex()
             
-            return f"{name}-{encrypted_hex}"
+            return f"{treated_name}-{encrypted_hex}"
         except Exception as e:
             print(f"Encryption error for {name}: {str(e)}. Using fallback hash")
             hash_value = hashlib.sha256(name.encode()).hexdigest()[:16]
             
-            return f"{name}-{hash_value}"
+            return f"{treated_name}-{hash_value}"
             
             

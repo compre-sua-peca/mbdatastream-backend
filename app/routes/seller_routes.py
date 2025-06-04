@@ -19,6 +19,7 @@ def get_seller_info(seller_domain):
     
     return jsonify(seller), 200
 
+
 @seller_bp.route("/showcase", methods=["GET"])
 def get_showcase():
     dynamo_client = DynamoSingleton()
@@ -44,12 +45,13 @@ def get_showcase():
         per_page = 15
         
         # Ensure that the tag id is the correct type (assuming Product.hash_category is stored as a string)
-        category_id = str(tag_id)
+        # category_id = str(tag_id)
         
         pagination = Product.query.filter_by(
-            hash_category=category_id,
+            hash_category=tag_id,
             id_seller=id_seller
         ).limit(per_page).all()
+        
         product = serialize_product(pagination)
         
         showcase[tag_name] = product

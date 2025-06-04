@@ -523,9 +523,10 @@ def upload_product_images():
             object_name = filename
 
             response = s3_client.upload_image_from_folder(
-                file_path, BUCKET_NAME, new_cod_product)
+                file_path, BUCKET_NAME, new_cod_product
+            )
 
-            print(response)
+            # print(response)
 
             image = {
                 "cod_product": filename_no_ext,
