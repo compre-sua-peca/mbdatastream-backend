@@ -23,9 +23,11 @@ class Product(db.Model):
     gear_dimensions = db.Column(db.String(255), nullable=True)
     cross_reference = db.Column(db.String(2500), nullable=True)
     hash_category = db.Column(db.String(255), db.ForeignKey(
-        'category.hash_category', onupdate="CASCADE"), nullable=False)
+        'category.hash_category', onupdate="CASCADE", ondelete="CASCADE"
+    ), nullable=False)
     id_seller = db.Column(db.Integer, db.ForeignKey(
-        'seller.id', onupdate="CASCADE", ondelete="CASCADE"), nullable=True)
+        'seller.id', onupdate="CASCADE", ondelete="CASCADE"
+    ), nullable=True)
 
     images = db.relationship('Images', backref='product', lazy=True)
     compatibilities = db.relationship(
@@ -36,13 +38,27 @@ class Product(db.Model):
 
 
 class Images(db.Model):
-    cod_product = db.Column(db.String(255), db.ForeignKey(
-        'product.cod_product', onupdate="CASCADE"), nullable=False)
-    id_image = db.Column(db.String(255), primary_key=True)
+    __tablename__ = "images"
+
+    cod_product = db.Column(
+        db.String(255),
+        db.ForeignKey(
+            'product.cod_product', onupdate="CASCADE", ondelete="CASCADE"
+        ),
+        primary_key=True,  # passa a fazer parte da PK composta
+        nullable=False
+    )
+
+    id_image = db.Column(
+        db.String(255),
+        primary_key=True,  # continua como parte da PK composta
+        nullable=False
+    )
+
     url = db.Column(db.String(255), nullable=False)
 
     def __repr__(self):
-        return f"Images('{self.cod_product}', '{self.url}')"
+        return f"Images('{self.cod_product}', '{self.id_image}', '{self.url}')"
 
 
 class Vehicle(db.Model):
@@ -51,7 +67,8 @@ class Vehicle(db.Model):
     end_year = db.Column(db.String(4), nullable=True)
     vehicle_type = db.Column(db.String(255), nullable=False)
     hash_brand = db.Column(db.String(255), db.ForeignKey(
-        'vehicle_brand.hash_brand', onupdate="CASCADE"), nullable=False)
+        'vehicle_brand.hash_brand', onupdate="CASCADE", ondelete="CASCADE"
+    ), nullable=False)
 
     compatibilities = db.relationship(
         'Compatibility', backref='vehicle', lazy=True)
@@ -61,9 +78,11 @@ class Vehicle(db.Model):
 
 class Compatibility(db.Model):
     cod_product = db.Column(db.String(255), db.ForeignKey(
-        'product.cod_product', onupdate="CASCADE"), primary_key=True)
+        'product.cod_product', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
     vehicle_name = db.Column(db.String(255), db.ForeignKey(
-        'vehicle.vehicle_name', onupdate="CASCADE"), primary_key=True)
+        'vehicle.vehicle_name', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
 
     def __repr__(self):
         return f"Compatibility('{self.cod_product}', '{self.vehicle_name}')"
@@ -96,42 +115,51 @@ class Seller(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(75), unique=True, nullable=False)
     cnpj = db.Column(db.String(20), unique=True, nullable=False)
-    
-    
+
+
 class SellerVehicles(db.Model):
-    id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
-    vehicle_name = db.Column(db.String(255), db.ForeignKey('vehicle.vehicle_name', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
-    
+    id_seller = db.Column(db.Integer, db.ForeignKey(
+        'seller.id', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+    vehicle_name = db.Column(db.String(255), db.ForeignKey(
+        'vehicle.vehicle_name', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+
     sellers = db.relationship(
         'Seller', backref='seller_v', lazy=True
-    )  
+    )
     vehicles = db.relationship(
         'Vehicle', backref='vehicle_s', lazy=True
     )
-    
-    
+
+
 class SellerBrands(db.Model):
-    id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+    id_seller = db.Column(db.Integer, db.ForeignKey(
+        'seller.id', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
     hash_brand = db.Column(db.String(255), db.ForeignKey(
-        'vehicle_brand.hash_brand', onupdate="CASCADE"), primary_key=True)
-    
+        'vehicle_brand.hash_brand', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+
     sellers = db.relationship(
         'Seller', backref='seller_b', lazy=True
     )
     vehicle_brand = db.relationship(
         'VehicleBrand', backref='brands_s', lazy=True
     )
-    
+
 
 class SellerCategories(db.Model):
-    id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
-    hash_category = db.Column(db.String(255), db.ForeignKey('category.hash_category', onupdate="CASCADE"), primary_key=True)
-    
+    id_seller = db.Column(db.Integer, db.ForeignKey(
+        'seller.id', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+    hash_category = db.Column(db.String(255), db.ForeignKey(
+        'category.hash_category', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+
     sellers = db.relationship(
         'Seller', backref='seller_c', lazy=True
     )
     categories = db.relationship(
         'Category', backref='category_s', lazy=True
     )
-    
-    

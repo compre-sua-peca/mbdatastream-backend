@@ -45,35 +45,6 @@ def get_vehicles_count_prods():
     })
 
 
-# List all vehicles
-"""
-@vehicle_bp.route("/all", methods=["GET"])
-def get_vehicles():
-    page = request.args.get("page", 1, type=int)
-    per_page = request.args.get("per_page", 16, type=int)
-    
-    pagination = Vehicle.query.paginate(
-        page=page, 
-        per_page=per_page, 
-        error_out=False
-    )
-   
-    vehicles = serialize_vehicle(pagination.items)
-    
-    meta = serialize_meta_pagination(
-        pagination.total, 
-        pagination.pages, 
-        pagination.page, 
-        pagination.per_page
-    )
-        
-    return jsonify({
-        "vehicles": vehicles,
-        "meta": meta   
-    }), 200
-"""
-   
-    
 @vehicle_bp.route("/brand/<string:hash_brand>", methods=["GET"])
 def get_by_vehicle_brand(hash_brand):
     page = request.args.get("page", 1, type=int)
@@ -155,16 +126,21 @@ def search_vehicle(vehicle_name):
     transformed_vehicle_name = vehicle_name.upper()
     
     try:
-        query = Vehicle.query\
+        query = db.session.query(
+            Vehicle,
+            func.count(Compatibility.cod_product).label("product_count")
+        )\
         .join(SellerVehicles, SellerVehicles.vehicle_name == Vehicle.vehicle_name)\
-        .filter(Vehicle.vehicle_name.ilike(f"%{transformed_vehicle_name}%"), SellerVehicles.id_seller == id_seller)
+        .outerjoin(Compatibility, Compatibility.vehicle_name == Vehicle.vehicle_name)\
+        .filter(Vehicle.vehicle_name.ilike(f"%{transformed_vehicle_name}%"), SellerVehicles.id_seller == id_seller)\
+        .group_by(Vehicle.vehicle_name)
         
         pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     
         if not pagination.items:
             return jsonify({"message": "Vehicle not found"}), 404
 
-        filtered_vehicles = serialize_vehicle(pagination.items)
+        filtered_vehicles = serialize_vehicle_product_count(pagination.items)
         
         meta = serialize_meta_pagination(
             pagination.total, 

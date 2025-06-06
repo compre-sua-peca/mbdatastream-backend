@@ -195,20 +195,22 @@ def add_multiple_seller_brands():
     try:
         for brand_name in brand_names:
             existing_vehicle_brand = VehicleBrand.query.filter_by(brand_name=brand_name).first()
+            
+            if existing_vehicle_brand:
 
-            existing_seller_brand = SellerBrands.query.filter_by(id_seller=id_seller, hash_brand=existing_vehicle_brand.hash_brand).first()
+                existing_seller_brand = SellerBrands.query.filter_by(id_seller=id_seller, hash_brand=existing_vehicle_brand.hash_brand).first()
 
-            if not existing_seller_brand:
-                seller_brand = SellerBrands(
-                    id_seller=id_seller,
-                    hash_brand=existing_vehicle_brand.hash_brand
-                )
-                
-                db.session.add(seller_brand)
+                if not existing_seller_brand:
+                    seller_brand = SellerBrands(
+                        id_seller=id_seller,
+                        hash_brand=existing_vehicle_brand.hash_brand
+                    )
+                    
+                    db.session.add(seller_brand)
 
-                response_details.append({
-                    "seller_brand": brand_name
-                })
+                    response_details.append({
+                        "seller_brand": brand_name
+                    })
 
         db.session.commit()
 
