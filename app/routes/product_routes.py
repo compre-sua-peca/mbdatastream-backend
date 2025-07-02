@@ -490,8 +490,8 @@ def update_product(cod_product):
     return jsonify({"message": "Produto atualizado com sucesso"}), 200
 
 
-@product_bp.route("/upload-product-images", methods=["POST"])
-def upload_product_images():
+@product_bp.route("/upload-product-images-by-folder", methods=["POST"])
+def upload_product_images_by_folder():
     s3_client = S3ClientSingleton()
 
     BUCKET_NAME = "mb-datastream"
@@ -523,9 +523,75 @@ def upload_product_images():
             object_name = filename
 
             response = s3_client.upload_image_from_folder(
-                file_path, BUCKET_NAME, new_cod_product)
+                file_path, BUCKET_NAME, new_cod_product
+            )
 
-            print(response)
+            # print(response)
+
+            image = {
+                "cod_product": filename_no_ext,
+                "id_image": new_cod_product,
+                "url": f"https://{BUCKET_NAME}.s3.amazonaws.com/{object_name}"
+            }
+
+            new_image = Images(**image)
+
+            if response:
+                db.session.add(new_image)
+                db.session.commit()
+
+                uploaded_files.append(image)
+
+                # count += 1
+            else:
+                print(f"Failed to upload {filename}")
+
+            """ Return early after uploading 2 images
+            if count == 2:
+                return jsonify({"message": "Imagens enviadas com sucesso", "files": uploaded_files}), 201
+            """
+
+    # Ensure response even if fewer than 2 images were uploaded
+    return jsonify({"message": "Upload process completed", "files": uploaded_files}), 201
+
+
+@product_bp.route("/upload-product-images-by-s3", methods=["POST"])
+def upload_product_images_by_s3():
+    s3_client = S3ClientSingleton()
+
+    BUCKET_NAME = "mb-datastream"
+    FOLDER = os.path.join("app", "uploads")
+
+    product_codes = {product.cod_product for product in db.session.query(
+        Product.cod_product).all()}
+    image_codes = {image.cod_product for image in db.session.query(
+        Images.cod_product).all()}
+
+    non_existing_prod_codes = product_codes.difference(image_codes)
+
+    # print(non_existing_prod_codes)
+
+    # count = 0
+    uploaded_files = []
+
+    for filename in os.listdir(FOLDER):
+        file_path = os.path.join(FOLDER, filename)
+
+        filename_no_ext, _ = os.path.splitext(filename)
+
+        if filename_no_ext in non_existing_prod_codes and is_image_file(filename):
+
+            next_num = extract_existing_product_codes()
+
+            new_cod_product = f"{filename_no_ext}-{next_num}"
+
+            object_name = filename
+
+            response = s3_client.upload_image_from_folder(
+                file_path, BUCKET_NAME, new_cod_product
+            )
+
+            # print(response)
 
             image = {
                 "cod_product": filename_no_ext,
@@ -580,6 +646,48 @@ def delete_product(cod_product):
         db.session.rollback()
 
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+
+@product_bp.route("/seller/<int:id_seller>", methods=["DELETE"])
+def delete_products_by_seller(id_seller):
+    # Search all products by seller
+    products = Product.query.filter_by(id_seller=id_seller).all()
+
+    if not products:
+        return jsonify({"message": "Nenhum produto encontrado para este vendedor"}), 404
+
+    try:
+        deleted_count = 0
+
+        for product in products:
+            # Delete all linked images to the product
+            for image in product.images:
+                db.session.delete(image)
+                
+            # Delete all linked compatibilities of that product
+            for comp in product.compatibilities:
+                db.session.delete(comp)
+                
+            db.session.delete(product)
+            deleted_count += 1
+            
+        db.session.commit()
+        
+        return (
+            jsonify(
+                {
+                    "message": f"Deletados {deleted_count} produto(s) do vendedor {id_seller}"
+                }
+            )
+        )
+
+    except Exception as e:
+        db.session.rollback()
+
+        return (
+            jsonify({"error": f"Ocorreu um erro ao deletar: {str(e)}"}),
+            500
+        )
 
 
 @product_bp.route("/sync-images", methods=["PATCH"])
