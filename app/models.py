@@ -163,3 +163,20 @@ class SellerCategories(db.Model):
     categories = db.relationship(
         'Category', backref='category_s', lazy=True
     )
+
+
+class Label(db.Model):
+    name = db.Column(db.String(255), primary_key=True)
+    id_seller = db.Column(db.Integer, db.ForeignKey(
+        'seller.id', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+
+   
+class CustomShowcase(db.Model):
+    cod_product = db.Column(db.String(255), db.ForeignKey(
+        'product.cod_product', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)
+    order = db.Column(db.Integer, nullable=False)
+    name = db.Column(db.String(255), db.ForeignKey(
+        'label.name', onupdate="CASCADE", ondelete="CASCADE"
+    ), primary_key=True)

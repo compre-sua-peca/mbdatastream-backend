@@ -769,6 +769,17 @@ def serialize_category(categories):
     return result
 
 
+def serialize_label(labels):
+    result = []
+    
+    for label in labels:
+        result.append({
+            "name": label.name
+        })
+        
+    return result
+
+
 def serialize_vehicle_product_count(vehicles):
     result = []
 
