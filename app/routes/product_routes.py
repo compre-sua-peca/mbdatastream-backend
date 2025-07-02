@@ -1,7 +1,7 @@
 import math
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text, or_
-from app.models import Product, Images
+from app.models import Product, Images, Category, Compatibility, Vehicle, VehicleBrand, Seller
 from app.extensions import db
 from app.utils.functions import process_excel
 import tempfile
@@ -42,20 +42,20 @@ def get_products_by_category(hash_category):
     per_page = request.args.get("per_page", 16, type=int)
     id_seller = request.args.get("id_seller", type=int)
     is_manufactured_str = request.args.get("is_manufactured")
-    
+
     is_manufactured = None
     if is_manufactured_str is not None:
         is_manufactured = is_manufactured_str.lower() == "true"
 
     transformed_hash_category = hash_category.replace("|", "/")
-    
+
     pagination = None
-    
+
     print(id_seller)
 
     if not hash_category:
         return jsonify({"message": "Nenhuma categoria fornecida"}), 400
-    
+
     if is_manufactured is None:
         pagination = Product.query.filter_by(
             hash_category=transformed_hash_category,
@@ -74,7 +74,7 @@ def get_products_by_category(hash_category):
         )
 
     products = serialize_product(pagination.items)
-    
+
     print(products)
 
     meta = serialize_meta_pagination(
@@ -96,7 +96,7 @@ def search_product(search_term):
     per_page = request.args.get("per_page", 16, type=int)
     is_manufactured_str = request.args.get("is_manufactured")
     id_seller = request.args.get("id_seller")
-    
+
     is_manufactured = None
     if is_manufactured_str is not None:
         is_manufactured = is_manufactured_str.lower() == "true"
@@ -126,7 +126,7 @@ def search_product(search_term):
                 Product.name_product.ilike(f"%{transformed_search_term}%"),
                 Product.cross_reference.ilike(f"%{transformed_search_term}%"),
                 Product.bar_code.ilike(f"%{transformed_search_term}%"),
-            ), 
+            ),
             Product.is_manufactured == is_manufactured,
             Product.id_seller == id_seller
         ).paginate(page=page, per_page=per_page, error_out=False)
@@ -282,7 +282,7 @@ def get_by_compatibility(vehicle_name):
         "products": products,
         "meta": meta
     }), 200
-    
+
 
 @product_bp.route("/compatibility-all/<string:vehicle_name>", methods=["GET"])
 def get_all_by_compatibility(vehicle_name):
@@ -290,7 +290,7 @@ def get_all_by_compatibility(vehicle_name):
         return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
 
     upper_vehicle_name = vehicle_name.upper()
-    
+
     id_seller = request.args.get("id_seller", type=int)
 
     # First get the list of product IDs that match the compatibility
@@ -359,7 +359,7 @@ def get_all_by_compatibility(vehicle_name):
 
     # Convert dictionary to list
     products_list = list(products_dict.values())
-    
+
     # products = serialize_product(products_list)
 
     # Get total for pagination
@@ -372,8 +372,8 @@ def get_all_by_compatibility(vehicle_name):
     """)
 
     count_result = db.session.execute(
-        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%", "id_seller": id_seller}).first() 
-    
+        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%", "id_seller": id_seller}).first()
+
     total = count_result.total
 
     return jsonify({
@@ -428,7 +428,7 @@ def create_products_from_csv():
             "message": "Produtos criados com sucesso",
             "data": products
         }), 201
-        
+
     finally:
         # Always ensure the temporary file is removed
         if os.path.exists(temp_path):
@@ -639,3 +639,48 @@ def sync_images():
     return jsonify({
         "message": "Imagens sincronizadas com sucesso!"
     })
+
+
+@product_bp.route("/create-product", methods=["POST"])
+def create_one_product_with_category_and_compatibilty():
+    data = request.json
+    product = data["cod_product"]
+
+    try:
+        category = Product.query.get(product)
+    except Exception as e:
+        return jsonify({"error": f"Erro ao consultar categoria: {str(e)}"}), 400
+
+    if category:
+        return jsonify({"message": "Produto já existe."}), 400
+    else:        
+        new_product = Product(
+            cod_product=data["cod_product"],
+            name_product=data["name_product"],
+            bar_code= int(data["bar_code"]),
+            gear_quantity=data["gear_quantity"],
+            gear_dimensions=data["gear_dimensions"],
+            cross_reference=data["cross_reference"],
+            description=data["description"],
+            hash_category=data["hash_category"],
+            id_seller=int(data["id_seller"]),
+        )
+        
+        try:
+            db.session.add(new_product)
+            compatibilities = data["compatibilities"]
+            for compat in compatibilities:
+                new_compatibilty = Compatibility(
+                    cod_product=new_product.cod_product,
+                    vehicle_name=compat
+                )
+                
+                db.session.add(new_compatibilty)
+                
+            db.session.commit()
+            
+            return jsonify({"message": "Produto criado com sucesso"}), 201
+
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Erro ao adicionar produto: {str(e)}"}), 400
