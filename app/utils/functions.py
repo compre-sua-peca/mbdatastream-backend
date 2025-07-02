@@ -2,7 +2,7 @@ from itertools import zip_longest
 import re
 import pandas as pd
 import asyncio
-from app.models import Category, Product, Vehicle, Compatibility, Images, VehicleBrand
+from app.models import Category, Product, Vehicle, Compatibility, Images, VehicleBrand, SellerBrands, SellerCategories, SellerVehicles
 from app.extensions import db
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -71,6 +71,9 @@ async def _process_excel_async(file_path, batch_size):
             "brands_created": 0,
             "compatibilities_created": 0,
             "images_created": 0,
+            "seller_categories_created": 0,
+            "seller_vehicles_created": 0,
+            "seller_brands_created": 0,
             "errors": []
         }
 
@@ -152,11 +155,12 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
             continue
 
 
-
 # Function to check the existence of the data and then register each row on the database
 async def process_row(index, row, session, created_categories, created_vehicles, created_brands, results):
     """Process a single row from the Excel file"""
     try:
+        id_seller = row.get("ID_SELLER", "")
+        
         # Get category
         category_name = row.get("CATEGORY", "")
         category_hash = await get_or_create_category(
@@ -165,6 +169,8 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             created_categories,
             results
         )
+        
+        await get_or_create_seller_category(session, id_seller, category_hash, results)
 
         cod_product = await get_or_create_product(session, row, category_hash, results)
 
@@ -212,24 +218,29 @@ async def process_row(index, row, session, created_categories, created_vehicles,
 
             # wrap in no_autoflush to avoid the Query-invoked autoflush error
             with session.no_autoflush:
-                brand_hash = await get_or_create_vehicle_brand(
+                hash_brand = await get_or_create_vehicle_brand(
                     session, brand, created_brands, results
                 )
-                await get_or_create_vehicle(
+                
+                await get_or_create_seller_brand(session, id_seller, hash_brand, results)
+                
+                vehicle_name = await get_or_create_vehicle(
                     session,
                     name,
                     start,
                     end,
                     vtype.strip() if vtype else None,
-                    brand_hash,
+                    hash_brand,
                     created_vehicles,
                     results
                 )
+                
+                await get_or_create_seller_vehicles(session, id_seller, vehicle_name, results)
 
             # now it’s safe to commit/flush or do another query
             await get_or_create_compatibility(
                 session, cod_product, name, results
-            )
+            )     
 
     except Exception as e:
         results["errors"].append(f"Error on row {index + 2}: {str(e)}")
@@ -412,9 +423,12 @@ async def get_or_create_category(session, raw_name, created_categories, results)
 
 async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, hash_brand, created_vehicles, results):
     """Get an existing vehicle or create a new one"""
+
+    treated_vehicle_name = vehicle_name.upper()
+    
     # Check if already processed
-    if vehicle_name in created_vehicles:
-        return
+    if treated_vehicle_name in created_vehicles:
+        return treated_vehicle_name
 
     # Check if brand exist
     # brand_check = await session.execute(
@@ -423,8 +437,6 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
     # brand = brand_check.scalars().first()
     # if not brand:
     #     raise ValueError(f"Brand with hash '{hash_brand}' does not exist for vehicle '{vehicle_name}'")
-    
-    treated_vehicle_name = vehicle_name.upper()
 
     # Check database
     stmt = select(Vehicle).where(Vehicle.vehicle_name == treated_vehicle_name)
@@ -441,8 +453,14 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
         )
         session.add(new_vehicle)
         results["vehicles_created"] += 1
+        
+        created_vehicles[treated_vehicle_name] = True
 
-    created_vehicles[treated_vehicle_name] = True
+        return treated_vehicle_name
+    
+    else:
+        
+        return treated_vehicle_name
 
 
 async def get_or_create_compatibility(session, product_code, vehicle_name, results):
@@ -465,6 +483,81 @@ async def get_or_create_compatibility(session, product_code, vehicle_name, resul
         )
         session.add(compatibility)
         results["compatibilities_created"] += 1
+
+
+async def get_or_create_seller_category(session, id_seller, hash_category, results):
+    """Get an existing seller category relationship or create a new one"""
+    
+    # Check database
+    stmt = select(SellerCategories).where(
+        SellerCategories.id_seller == id_seller,
+        SellerCategories.hash_category == hash_category
+    )
+    result = await session.execute(stmt)
+    existing_seller_brand = result.scalars().first()
+    
+    if not existing_seller_brand:
+        new_seller_category = SellerCategories(
+            hash_category=hash_category,
+            id_seller=id_seller
+        )
+        session.add(new_seller_category)
+        results["seller_categories_created"] += 1
+        
+        return new_seller_category
+    
+    else:
+        return
+    
+    
+async def get_or_create_seller_brand(session, id_seller, hash_brand, results):
+    """Get an existing seller brand relationship or create a new one"""
+    
+    # Check database
+    stmt = select(SellerBrands).where(
+        SellerBrands.id_seller == id_seller,
+        SellerBrands.hash_brand == hash_brand
+    )
+    result = await session.execute(stmt)
+    existing_seller_brand = result.scalars().first()
+    
+    if not existing_seller_brand:
+        new_seller_brand = SellerBrands(
+            hash_brand=hash_brand,
+            id_seller=id_seller
+        )
+        session.add(new_seller_brand)
+        results["seller_brands_created"] += 1
+        
+        return new_seller_brand
+    
+    else:
+        return
+
+
+async def get_or_create_seller_vehicles(session, id_seller, vehicle_name, results):
+    """Get an existing seller vehicle relationship or create a new one"""
+    
+    # Check database
+    stmt = select(SellerVehicles).where(
+        SellerVehicles.id_seller == id_seller,
+        SellerVehicles.vehicle_name == vehicle_name
+    )
+    result = await session.execute(stmt)
+    existing_seller_category = result.scalars().first()
+    
+    if not existing_seller_category:
+        new_seller_category = SellerVehicles(
+            id_seller=id_seller,
+            vehicle_name=vehicle_name
+        )
+        session.add(new_seller_category)
+        results["seller_vehicles_created"] += 1
+        
+        return new_seller_category
+
+    else:
+        return
 
 
 async def create_image(
