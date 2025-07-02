@@ -136,7 +136,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
     """Process a single row from the Excel file"""
     try:
         # Get category
-        category_name = row["CATEGORY"]
+        category_name = row.get("CATEGORY", "")
         category_hash = await get_or_create_category(
             session,
             category_name,
@@ -185,6 +185,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
                 brand_hash = await get_or_create_vehicle_brand(
                     session, brand, created_brands, results
                 )
+                
                 await get_or_create_vehicle(
                     session,
                     name,
