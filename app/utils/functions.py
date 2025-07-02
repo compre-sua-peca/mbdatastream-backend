@@ -27,7 +27,8 @@ def extract_compat_to_list(compat_str: str) -> list[str]:
         return []
 
     # 2) remove outer brackets, parens, and any quotes
-    cleaned = re.sub(r"^[\[\(\s]*|[\]\)\s]*$", "", compat_str)  # strip [] or ()
+    cleaned = re.sub(r"^[\[\(\s]*|[\]\)\s]*$", "",
+                     compat_str)  # strip [] or ()
     cleaned = cleaned.replace("'", "").replace('"', "")
 
     # 3) split on semicolons OR commas (one or more)
@@ -37,6 +38,8 @@ def extract_compat_to_list(compat_str: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 # Asynchronous processing function to process the product insertion in batches after reading the Excel
+
+
 async def _process_excel_async(file_path, batch_size):
     try:
         # Read the Excel file
@@ -67,6 +70,7 @@ async def _process_excel_async(file_path, batch_size):
             "vehicles_created": 0,
             "brands_created": 0,
             "compatibilities_created": 0,
+            "images_created": 0,
             "errors": []
         }
 
@@ -107,13 +111,21 @@ async def _process_excel_async(file_path, batch_size):
         }
 
 # Function to start the process of batches to insert into the database
+
+
 async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, created_brands, results):
-    """Process a batch of rows with a single session"""
-    # Process each row with its own session to prevent cascading failures
+    """
+    Processa cada linha em batch_df, abrindo um AsyncSession por linha.
+    Se process_row não lançar exceção, dá commit; senão, dá rollback e registra erro.
+    """
+
+    # Para cada linha do DataFrame, criamos uma sessão independente
     for index, row in batch_df.iterrows():
         try:
+            # 1) Abre um session novo para esta linha
             async with db.async_session() as session:
-                async with session.begin():
+                try:
+                    # 2) Processa a linha (essa função NÃO comita nem dá rollback)
                     await process_row(
                         index,
                         row,
@@ -123,12 +135,22 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
                         created_brands,
                         results
                     )
+                    # 3) Se não houve erro, commit desta transação
+                    await session.commit()
+                    results["processed"] += 1
 
-            results["processed"] += 1
+                except Exception as e:
+                    # 4) Se der qualquer erro em process_row, faz rollback
+                    await session.rollback()
+                    # Lança novamente para o bloco de fora capturar e registrar a mensagem
+                    raise
+
         except Exception as e:
-            results["errors"].append(
-                f"Error on row {index + 2}: {str(e)}"
-            )
+            # Aqui está fora do "async with session", ou seja, já rollbackado e session fechado
+            results["errors"].append(f"Error on row {index + 2}: {str(e)}")
+            # Continua para a próxima linha, sem interromper todo o batch
+            continue
+
 
 
 # Function to check the existence of the data and then register each row on the database
@@ -136,7 +158,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
     """Process a single row from the Excel file"""
     try:
         # Get category
-        category_name = row["CATEGORY"]
+        category_name = row.get("CATEGORY", "")
         category_hash = await get_or_create_category(
             session,
             category_name,
@@ -145,6 +167,14 @@ async def process_row(index, row, session, created_categories, created_vehicles,
         )
 
         cod_product = await get_or_create_product(session, row, category_hash, results)
+
+        images = row.get("IMAGES", "")
+        if images:
+            image_list = images.split("|")
+            
+            await create_image(session, cod_product, image_list, results)
+
+            await session.commit()
 
         # Extract vehicle compatibility info
         vehicles_names_string = row.get("COMPATIBILITY", "")
@@ -168,7 +198,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             # normalize & skip empties
             if not (name and brand):
                 continue
-            name  = name.strip()
+            name = name.strip()
             brand = brand.strip()
 
             # normalize unknown years
@@ -178,7 +208,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
                 return y.strip()
 
             start = norm_year(start)
-            end   = norm_year(end)
+            end = norm_year(end)
 
             # wrap in no_autoflush to avoid the Query-invoked autoflush error
             with session.no_autoflush:
@@ -203,20 +233,20 @@ async def process_row(index, row, session, created_categories, created_vehicles,
 
     except Exception as e:
         results["errors"].append(f"Error on row {index + 2}: {str(e)}")
-        
+
 
 async def get_or_create_vehicle_brand(session, brand_name, created_brands, results):
     """Get an existing vehicle brand or create a new one"""
     hash_generator = HashGenerator()
-    
+
     if brand_name in created_brands:
         return created_brands[brand_name]
-    
+
     # Check database
     stmt = select(VehicleBrand).where(VehicleBrand.brand_name == brand_name)
     result = await session.execute(stmt)
     existing_brand = result.scalars().first()
-    
+
     treated_brand_name = brand_name.replace(" ", "")
 
     if existing_brand:
@@ -235,64 +265,91 @@ async def get_or_create_vehicle_brand(session, brand_name, created_brands, resul
     return brand_hash
 
 
-async def get_or_create_product(session, row, category_hash, results):
+async def get_or_create_product(session, row, category_hash, results) -> str:
+    """
+    Verifica se já existe um Product.cod_product no banco. Se não existir,
+    faz todos os checks de validação (nome, código de barras, quantidades, etc.),
+    cria um novo Product, faz flush para garantir o INSERT antes de retornarmos,
+    e incrementa o contador em results. Retorna sempre cod_product como string.
+    """
+
+    # Extrair e validar campos do row
     name_product = row["NAME_PRODUCT"]
-    
     name_check = name_product.split("-")[0].strip()
     is_manufactured = True
-    
+
+    # Se o prefixo for "ITEM DESCONTINUADO", ajustamos o nome e marcamos como não fabricado
     if name_check == "ITEM DESCONTINUADO":
-        name_product = name_product.split("-")[1].strip()
+        # Ex.: "ITEM DESCONTINUADO - Produto X"
+        name_product = name_product.split("-", 1)[1].strip()
         is_manufactured = False
-        
+
+    # Validar bar_code: se for NaN, deixa None; senão, tenta converter para int
     bar_code = row["BAR_CODE"]
-    
-    # Checks if bar_code is actually valid
     if pd.isna(bar_code):
         bar_code = None
-    else: 
+    else:
         try:
             bar_code = int(bar_code)
-        except(ValueError, TypeError):
+        except (ValueError, TypeError):
             bar_code = None
-            
+
+    # Validar gear_quantity: se for NaN, deixa None; senão, tenta converter para int
     gear_quantity = row["GEAR_QUANTITY"]
-    
-    # Checks if gear_quantity is actually valid
     if pd.isna(gear_quantity):
         gear_quantity = None
     else:
         try:
             gear_quantity = int(gear_quantity)
-        except(ValueError, TypeError):
+        except (ValueError, TypeError):
             gear_quantity = None
-    
-    # Create product dict
+
+    # Outros campos simples (se vierem NaN, colocamos None)
+    gear_dimensions = None if pd.isna(row.get("GEAR_DIMENSIONS", None)) else row.get("GEAR_DIMENSIONS")
+    cross_reference = None if pd.isna(row.get("CROSS_REF", None)) else row.get("CROSS_REF")
+    cod_product = str(row["COD_PRODUCT"]).strip()
+    id_seller = row["ID_SELLER"]
+
+    # Montar o dicionário que será passado ao construtor de Product
     product_dict = {
-        "cod_product": row["COD_PRODUCT"],
+        "cod_product": cod_product,
         "name_product": name_product,
-        "description": row["DESCRIPTION"],
+        "description": row.get("DESCRIPTION", "").strip(),
         "is_manufactured": is_manufactured,
         "bar_code": bar_code,
         "gear_quantity": gear_quantity,
-        "gear_dimensions": None if pd.isna(row["GEAR_DIMENSIONS"]) else row["GEAR_DIMENSIONS"],
-        "cross_reference": None if pd.isna(row["CROSS_REF"]) else row["CROSS_REF"],
+        "gear_dimensions": gear_dimensions,
+        "cross_reference": cross_reference,
         "hash_category": category_hash,
-        "id_seller": row["ID_SELLER"]
+        "id_seller": id_seller,
     }
 
-    # Check if product exists before adding
-    sql_statement = select(Product).where(
-        Product.cod_product == product_dict["cod_product"])
-    result = await session.execute(sql_statement)
+    # Verificar se o produto já existe no banco
+    stmt = select(Product).where(Product.cod_product == cod_product)
+    result = await session.execute(stmt)
     existing_product = result.scalars().first()
 
+    # Se não existe, criamos e fazemos flush imediato
     if not existing_product:
         product = Product(**product_dict)
         session.add(product)
-        results["products_created"] += 1
-        
-    return product_dict["cod_product"]
+        # Incrementa contador local de produtos criados
+        results["products_created"] = results.get("products_created", 0) + 1
+
+        try:
+            # Burla o autoflush tardio, envia o INSERT de Product ao banco agora
+            await session.flush()
+        except Exception as e:
+            # Se der erro (PK duplicada, FK inválida, etc.), desfaz esta parte da transação
+            await session.rollback()
+            results.setdefault("errors", []).append(
+                f"Erro ao criar Product {product_dict['cod_product']}: {str(e)}"
+            )
+            # Relança para que quem chamar possa tratar/abortar o processamento desta linha
+            raise
+
+    # Ao chegar aqui, ou o produto já existia, ou acabamos de criá-lo e dar flush.
+    return cod_product
 
 
 async def get_or_create_category(session, raw_name, created_categories, results):
@@ -326,14 +383,14 @@ async def get_or_create_category(session, raw_name, created_categories, results)
             name_category=name_norm,
             display_order=0
         )
-        
+
         session.add(new_cat)
-        
+
         try:
             await session.flush()   # push to DB so that IntegrityError happens now
-            
+
             results["categories_created"] += 1
-            
+
         except IntegrityError:
             # If someone else inserted the same hash concurrently,
             # roll back that insert, then re-query for the existing row:
@@ -349,9 +406,8 @@ async def get_or_create_category(session, raw_name, created_categories, results)
 
     # Cache and return
     created_categories[name_norm] = cat_hash
-    
-    return cat_hash
 
+    return cat_hash
 
 
 async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, hash_brand, created_vehicles, results):
@@ -359,7 +415,7 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
     # Check if already processed
     if vehicle_name in created_vehicles:
         return
-            
+
     # Check if brand exist
     # brand_check = await session.execute(
     #     select(VehicleBrand).where(VehicleBrand.hash_brand == hash_brand)
@@ -367,15 +423,17 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
     # brand = brand_check.scalars().first()
     # if not brand:
     #     raise ValueError(f"Brand with hash '{hash_brand}' does not exist for vehicle '{vehicle_name}'")
+    
+    treated_vehicle_name = vehicle_name.upper()
 
     # Check database
-    stmt = select(Vehicle).where(Vehicle.vehicle_name == vehicle_name)
+    stmt = select(Vehicle).where(Vehicle.vehicle_name == treated_vehicle_name)
     result = await session.execute(stmt)
     existing_vehicle = result.scalars().first()
 
     if not existing_vehicle:
         new_vehicle = Vehicle(
-            vehicle_name=vehicle_name,
+            vehicle_name=treated_vehicle_name,
             start_year=start_year,
             end_year=end_year,
             vehicle_type=vehicle_type,
@@ -384,15 +442,18 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
         session.add(new_vehicle)
         results["vehicles_created"] += 1
 
-    created_vehicles[vehicle_name] = True
+    created_vehicles[treated_vehicle_name] = True
 
 
 async def get_or_create_compatibility(session, product_code, vehicle_name, results):
     """Create a compatibility if it doesn't exist"""
+    
+    treated_vehicle_name = vehicle_name.upper()
+    
     # Check if compatibility exists
     stmt = select(Compatibility).where(
         Compatibility.cod_product == product_code,
-        Compatibility.vehicle_name == vehicle_name
+        Compatibility.vehicle_name == treated_vehicle_name
     )
     result = await session.execute(stmt)
     existing_compat = result.scalars().first()
@@ -400,10 +461,88 @@ async def get_or_create_compatibility(session, product_code, vehicle_name, resul
     if not existing_compat:
         compatibility = Compatibility(
             cod_product=product_code,
-            vehicle_name=vehicle_name
+            vehicle_name=treated_vehicle_name
         )
         session.add(compatibility)
         results["compatibilities_created"] += 1
+
+
+async def create_image(
+    session,
+    cod_product: str,
+    urls: list[str],
+    results: dict
+):
+    """
+    Insere novas imagens para <cod_product>, numerando id_image como "<cod_product>-<número>".
+    Antes de cada SELECT, faz flush para que não exista inconsisência entre pendências e BD real.
+    Além disso, se encontrar exatamente id_image == cod_product (sem suffix), trata como sufixo 0.
+    E, para cada novo new_id gerado, verifica explicitamente se ele já existe no banco. 
+    Se existir, pula para o próximo.
+    """
+
+    # 1) Flush de quaisquer INSERTs/UPDATEs pendentes na sessão
+    await session.flush()
+
+    # 2) Busca todos os id_image que já existem no banco para este produto:
+    stmt = select(Images.id_image).where(Images.id_image.like(f"{cod_product}%"))
+    result = await session.execute(stmt)
+    raw_existing = result.scalars().all()
+    # Exemplo de raw_existing: ["2110655", "2110655-1", "2110655-2", ...]
+
+    # 3) Determinar qual é o maior sufixo numérico. Se existir uma entrada igual a cod_product puro,
+    #    vamos tratá-la como "sucesso zero" (ou seja, consideramos max_suffix >= 0).
+    max_suffix = -1
+    for full_id_image in raw_existing:
+        if full_id_image == cod_product:
+            # existe id_image exatamente igual ao cod_product
+            max_suffix = max(max_suffix, 0)
+            continue
+
+        # se vier algo do tipo "2110655-17", fazemos rsplit:
+        parts = full_id_image.rsplit("-", 1)
+        if len(parts) == 2 and parts[0] == cod_product and parts[1].isdigit():
+            num = int(parts[1])
+            if num > max_suffix:
+                max_suffix = num
+
+    # Se não havia NADA (nem cod_product puro nem "<cod_product>-n"), max_suffix = -1
+    # Logo, next_suffix = 0? Não, queremos iniciar em 1 mesmo que não tivesse imagem,
+    # porque nosso primeiro id_image deverá ser "<cod_product>-1".
+    # Mas se max_suffix == 0 (significa que existia um registro "cod_product" sem suffix),
+    # então next_suffix = 1 gera "<cod_product>-1" sem colisão. Se max_suffix == 2,
+    # next_suffix = 3, etc.
+    next_suffix = max_suffix + 1
+    if next_suffix < 1:
+        next_suffix = 1
+
+    # 4) Agora percorremos cada URL e tentamos inserir
+    for url in urls:
+        treated_url = url.strip()
+        
+        # Recalcular new_id com o next_suffix corrente
+        new_id = f"{cod_product}-{next_suffix}"
+
+        # 4.1) Verificar se já existe um registro com esse mesmo new_id
+        stmt2 = select(Images).where(Images.id_image == new_id)
+        r2 = await session.execute(stmt2)
+        if r2.scalars().first():
+            # Se id_image == new_id já existe, pulamos diretamente para o próximo sufixo
+            next_suffix += 1
+            # (não incrementamos imagens_created, pois nada foi inserido)
+            continue
+
+        # 4.2) Caso não exista, criamos e adicionamos
+        image = Images(cod_product=cod_product, id_image=new_id, url=treated_url)
+        session.add(image)
+        results["images_created"] = results.get("images_created", 0) + 1
+
+        # 4.3) Incrementa pour o próximo new_id
+        next_suffix += 1
+
+    # Atenção: não commitamos aqui. Quem chamou create_image deve chamar `await session.commit()`
+    # após processar a linha inteira. Se ocorrer qualquer erro mais adiante, basta fazer rollback.
+
 
 # Synchronous wrapper function to handle the batch loop
 def process_excel(file_path, batch_size=100):
@@ -417,54 +556,59 @@ def process_excel(file_path, batch_size=100):
         return loop.run_until_complete(_process_excel_async(file_path, batch_size))
     finally:
         loop.close()
-        
+
+
 def is_image_file(filename):
     valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
-    
+
     return filename.lower().endswith(valid_extensions)
+
 
 def extract_existing_product_codes():
     existing_images = db.session.query(Images.cod_product).filter(
         Images.cod_product.like("f{filename_no_ext}%")
     ).all()
-    
+
     existing_codes = {img.cod_product for img in existing_images}
-    
+
     if existing_codes:
-        numbers = [int(code.split("+")[-1]) for code in existing_codes if "-" in code]
+        numbers = [int(code.split("+")[-1])
+                   for code in existing_codes if "-" in code]
         next_num = max(numbers) + 1 if numbers else 1
-        
+
         return next_num
     else:
         next_num = 1
-        
+
         return next_num
-    
+
 
 """ ----------------------------- Function to handle json from the database ------------------------------ """
 
+
 def serialize_product(products):
     result = []
-    
+
     for product in products:
         # Get related category name if available
         category_name = product.category.name_category if product.category else None
-        
+
         # Get list of image URLs
         image_urls = [image.url for image in product.images]
-        
+
         # Get list of vehicles this product is compatible with
         compatibility = []
         for comp in product.compatibilities:
             vehicle = comp.vehicle
-            
+
             # Get vehicle brand using the existing relationship
             brand_name = None
             if vehicle:
                 # Use the relationship established by the ORM
-                vehicle_brand = vehicle.vehicle_brand if hasattr(vehicle, 'vehicle_brand') else None
+                vehicle_brand = vehicle.vehicle_brand if hasattr(
+                    vehicle, 'vehicle_brand') else None
                 brand_name = vehicle_brand.brand_name if vehicle_brand else None
-            
+
             vehicle_data = {
                 "vehicle_name": comp.vehicle_name,
                 "vehicle_type": vehicle.vehicle_type if vehicle else None,
@@ -473,7 +617,7 @@ def serialize_product(products):
                 "brand": brand_name
             }
             compatibility.append(vehicle_data)
-        
+
         result.append({
             "cod_product": product.cod_product,
             "name_product": product.name_product,
@@ -488,13 +632,13 @@ def serialize_product(products):
             "images": image_urls,
             "compatibilities": compatibility
         })
-    
+
     return result
 
 
 def serialize_vehicle(vehicles):
     result = []
-    
+
     for vehicle in vehicles:
         result.append({
             "vehicle_name": vehicle.vehicle_name,
@@ -503,25 +647,38 @@ def serialize_vehicle(vehicles):
             "end_year": vehicle.end_year,
             "hash_brand": vehicle.hash_brand
         })
-    
+
     return result
 
 
 def serialize_brand(brands):
     result = []
-    
+
     for brand in brands:
         result.append({
             "hash_brand": brand.hash_brand,
             "brand_name": brand.brand_name,
             "brand_image": brand.brand_image
         })
-    
+
     return result
+
+
+def serialize_category(categories):
+    result = []
+
+    for category in categories:
+        result.append({
+            "hash_category": category.hash_category,
+            "name_category": category.name_category
+        })
+
+    return result
+
 
 def serialize_vehicle_product_count(vehicles):
     result = []
-    
+
     for vehicle, product_count in vehicles:
         result.append({
             "vehicle_name": vehicle.vehicle_name,
@@ -530,11 +687,12 @@ def serialize_vehicle_product_count(vehicles):
             "vehicle_type": vehicle.vehicle_type,
             "product_count": product_count
         })
-        
+
     return result
 
+
 def serialize_meta_pagination(total, pages, page, per_page):
-    
+
     return {
         "total_items": total,
         "total_pages": pages,
