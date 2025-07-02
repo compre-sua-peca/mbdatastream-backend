@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.dal.encryptor import HashGenerator
-from app.models import Category
+from app.models import Category, SellerCategories
+from app.utils.functions import serialize_category
 from app.extensions import db
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
@@ -11,23 +12,39 @@ category_bp = Blueprint("categories", __name__)
 
 @category_bp.route("/all", methods=["GET"])
 def get_all_categories():
-    categories = Category.query.order_by(Category.display_order).all()
+    # Read and validate the id_seller parameter
+    id_seller = request.args.get("id_seller", type=int)
+    
+    if not id_seller:
+        return jsonify({"error": "Query parameter 'id_seller' (integer) is required."}), 400
 
-    results = []
+    # Join Category ← SellerCategories for this seller, ordered by display_order
+    category_rows = (
+        db.session.query(Category)
+        .join(SellerCategories, SellerCategories.hash_category == Category.hash_category)
+        .filter(SellerCategories.id_seller == id_seller)
+        .order_by(Category.display_order)
+        .all()
+    )
 
-    if categories:
-        for category in categories:
-            results.append({
-                "hash_category": category.hash_category,
-                "name_category": category.name_category
-            })
+    # Run your serializer to turn the Category models into plain dicts
+    categories = serialize_category(category_rows)
 
-    return jsonify(results), 200
+    # If the list is empty, tell the client “no categories found”
+    if not categories:
+        return jsonify({"error": "No categories found for that seller."}), 200
+
+    # Return a JSON object with a "categories" field
+    return jsonify({
+        "categories": categories
+    }), 200
+
 
 # Create a new category
 @category_bp.route("/", methods=["POST"])
 def create_category():
     data = request.get_json()
+    id_seller = request.args.get("id_seller", type=int)
     
     hash_generator = HashGenerator()
     
@@ -52,7 +69,13 @@ def create_category():
                 display_order=new_order
             )
             
+            new_seller_category = SellerCategories(
+                id_seller=id_seller,
+                hash_category=hash_category
+            )
+            
             db.session.add(new_category)
+            db.session.add(new_seller_category)
         db.session.commit()
     
     except SQLAlchemyError as e:
@@ -61,6 +84,55 @@ def create_category():
         raise e
     
     return jsonify({"message": "Category created successfully!"}), 201
+
+
+@category_bp.route("/create-multiple-seller-categories", methods=["POST"])
+def create_seller_categories():
+    id_seller = request.args.get("id_seller", type=int)
+    categories = request.json.get("category_names")
+    
+    if not categories or not id_seller:
+        return jsonify({"error": "categories (array) and id_seller are required"}), 400
+    
+    total_created = 0
+    response_details = []
+    
+    try:
+        for category in categories:
+            existing_category = Category.query.filter_by(
+                name_category=category
+            ).first()
+            
+            existing_seller_category = SellerCategories.query.filter_by(
+                id_seller=id_seller,
+                hash_category=existing_category.hash_category
+            ).first()
+            
+            if not existing_seller_category:
+                seller_category = SellerCategories(
+                    id_seller = id_seller,
+                    hash_category = existing_category.hash_category
+                )
+                
+                db.session.add(seller_category)
+                
+                response_details.append({
+                    "category": category
+                })
+                
+                total_created += 1
+                
+        db.session.commit()
+            
+        return jsonify({
+            "message": f"Processed {total_created} categories",
+            "details": response_details
+        })
+        
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        
+        raise e
 
 
 # Retrieve a single category by its hash_category
