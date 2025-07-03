@@ -1,6 +1,7 @@
 from flask import Blueprint, request, jsonify
 from sqlalchemy import text
 from app.extensions import db
+from app.middleware.api_token import require_api_key
 from app.models import Seller, Label, CustomShowcase
 from sqlalchemy.exc import SQLAlchemyError
 from app.services.seller_db_service import get_all_labels, get_all_showcase_items, get_one_label, get_one_similar_label
@@ -33,6 +34,7 @@ def create_seller():
 
 
 @seller_db_bp.route("/create-label/<string:id_seller>", methods=["POST"])
+@require_api_key
 def create_showcase_label(id_seller):
     data = request.get_json()
 
@@ -55,6 +57,7 @@ def create_showcase_label(id_seller):
 
 
 @seller_db_bp.route("/get-all-labels/<string:id_seller>", methods=["GET"])
+@require_api_key
 def get_all_showcase_labels(id_seller):
     try:
         labels = get_all_labels(id_seller=id_seller)
@@ -72,6 +75,7 @@ def get_all_showcase_labels(id_seller):
 
 
 @seller_db_bp.route("/get-one-label/<string:name>", methods=["GET"])
+@require_api_key
 def get_one_showcase_label(name):
     try:
         label = get_one_similar_label(name)
@@ -89,6 +93,7 @@ def get_one_showcase_label(name):
 
 
 @seller_db_bp.route("/update-label/<string:name>", methods=["PUT"])
+@require_api_key
 def update_one_showcase_label(name):
     try:
         data = request.get_json()
@@ -115,6 +120,7 @@ def update_one_showcase_label(name):
 
 
 @seller_db_bp.route("/delete-label/<string:name>", methods=["DELETE"])
+@require_api_key
 def delete_showcase_label(name):
     try:
         existing_label = get_one_label(name=name)
@@ -137,6 +143,7 @@ def delete_showcase_label(name):
 
 
 @seller_db_bp.route("/create-custom-showcase", methods=["POST"])
+@require_api_key
 def create_custom_showcase():
     try:
         data = request.get_json()
@@ -182,6 +189,7 @@ def create_custom_showcase():
 
 
 @seller_db_bp.route("/get-all-showcase-items", methods=["GET"])
+@require_api_key
 def get_custom_showcase_items():
     try:
         custom_showcase_items = get_all_showcase_items()
@@ -200,6 +208,7 @@ def get_custom_showcase_items():
 
 
 @seller_db_bp.route("/get-seller-showcase-items/<string:id_seller>", methods=["GET"])
+@require_api_key
 def get_seller_showcase_items(id_seller):
     try: 
         labels = get_all_labels(id_seller)
@@ -244,6 +253,7 @@ def get_seller_showcase_items(id_seller):
     
     
 @seller_db_bp.route("/update-showcase-items/<string:id_seller>/<string:label>", methods=["PUT"])
+@require_api_key
 def update_showcase_items(id_seller, label):
     try:
         data = request.get_json()
@@ -302,6 +312,7 @@ def update_showcase_items(id_seller, label):
     
     
 @seller_db_bp.route("/delete-showcase-item/<string:cod_product>", methods=["DELETE"])
+@require_api_key
 def delete_showcase_item(cod_product):
     try:
         existing_showcase_item = CustomShowcase.query.filter_by(cod_product=cod_product).first()
