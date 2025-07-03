@@ -780,6 +780,19 @@ def serialize_label(labels):
     return result
 
 
+def serialize_custom_showcase(custom_showcase):
+    result = []
+    
+    for item in custom_showcase:
+        result.append({
+            "cod_product": item.cod_product,
+            "order": item.order,
+            "name": item.name
+        })
+        
+    return result
+
+
 def serialize_vehicle_product_count(vehicles):
     result = []
 
@@ -792,6 +805,29 @@ def serialize_vehicle_product_count(vehicles):
             "product_count": product_count
         })
 
+    return result
+
+
+def serialize_seller_showcase_items(seller_showcase_items):
+    result = []
+    
+    for item in seller_showcase_items:
+        
+        result.append({
+            "order": item.order,
+            "label": item.label,
+            "cod_product": item.cod_product,
+            "name_product": item.name_product,
+            "bar_code": item.bar_code,
+            "gear_quantity": item.gear_quantity,
+            "cross_reference": item.cross_reference,
+            "hash_category": item.hash_category,
+            "gear_dimensions": item.gear_dimensions,
+            "description": item.description,
+            "is_active": item.is_active,
+            "is_manufactured": item.is_manufactured
+        })
+        
     return result
 
 
