@@ -27,6 +27,7 @@ def get_all_showcase_items():
     
     return showcase_items
 
+
 def get_one_showcase_item(item):
     item = CustomShowcase.query.filter_by(
         cod_product=item.get("cod_product"),

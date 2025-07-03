@@ -171,7 +171,7 @@ class Label(db.Model):
         'seller.id', onupdate="CASCADE", ondelete="CASCADE"
     ), primary_key=True)
 
-   
+ 
 class CustomShowcase(db.Model):
     cod_product = db.Column(db.String(255), db.ForeignKey(
         'product.cod_product', onupdate="CASCADE", ondelete="CASCADE"

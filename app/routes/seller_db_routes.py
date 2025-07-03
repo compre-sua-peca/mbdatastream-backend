@@ -243,7 +243,62 @@ def get_seller_showcase_items(id_seller):
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
     
     
+@seller_db_bp.route("/update-showcase-items/<string:id_seller>/<string:label>", methods=["PUT"])
+def update_showcase_items(id_seller, label):
+    try:
+        data = request.get_json()
+        
+        if not data or 'items' not in data:
+            return jsonify({"message": "No items data provided"}), 400
+        
+        existing_label = Label.query.filter_by(name=label, id_seller=id_seller).first()
+        
+        if not existing_label:
+            return jsonify({"message": f"Label '{label}' does not exist for seller {id_seller}"}), 404
+        
+        items = data['items']
+        
+        current_items = CustomShowcase.query.filter_by(name=label).all()
+        current_cod_products = {item.cod_product for item in current_items}
+        
+        new_items_data = {item['cod_product']: item for item in items}
+        new_cod_products = set(new_items_data.keys())
+        
+        items_to_delete = current_cod_products - new_cod_products
+        
+        if items_to_delete:
+            CustomShowcase.query.filter(
+                CustomShowcase.name == label,
+                CustomShowcase.cod_product.in_(items_to_delete)
+            ).delete(synchronize_session=False)
+            
+        for item_data in items:
+            cod_product = item_data['cod_product']
+            new_order = item_data['order']
+            
+            existing_item = CustomShowcase.query.filter_by(
+                cod_product=cod_product,
+                name=label
+            ).first()
+            
+            if existing_item:
+                existing_item.order = new_order
+            
+            else:
+                new_showcase_item = CustomShowcase(
+                    cod_product=cod_product,
+                    order=new_order,
+                    name=label
+                )
+                db.session.add(new_showcase_item)
 
+        db.session.commit()
+        return jsonify({"message": f"Label '{label}' updated successfully"}), 200
+        
+    except SQLAlchemyError as e:
+        
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
     
     
 @seller_db_bp.route("/delete-showcase-item/<string:cod_product>", methods=["DELETE"])
