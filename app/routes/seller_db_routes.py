@@ -4,14 +4,15 @@ from app.extensions import db
 from app.middleware.api_token import require_api_key
 from app.models import Seller, Label, CustomShowcase
 from sqlalchemy.exc import SQLAlchemyError
-from app.services.seller_db_service import get_all_labels, get_all_showcase_items, get_one_label, get_one_similar_label
-from app.utils.functions import serialize_label, serialize_custom_showcase, serialize_seller_showcase_items
+from app.services.seller_db_service import get_all_db_sellers, get_one_db_seller, get_all_labels, get_all_showcase_items, get_one_db_seller_by_cnpj, get_one_db_seller_by_name, get_one_label, get_one_similar_label
+from app.utils.functions import serialize_label, serialize_custom_showcase, serialize_seller_showcase_items, serialize_seller
 
 
 seller_db_bp = Blueprint("seller-db", __name__)
 
 
 @seller_db_bp.route("/create", methods=["POST"])
+@require_api_key
 def create_seller():
     data = request.get_json()
 
@@ -31,6 +32,120 @@ def create_seller():
         raise e
 
     return jsonify({"message": "Seller created successfully"}), 201
+
+
+@seller_db_bp.route("/get-all", methods=["GET"])
+@require_api_key
+def get_all_sellers():  
+    try:
+        sellers = get_all_db_sellers()
+        
+        if not sellers:
+            return jsonify({"message": "No sellers found!"}), 404
+        
+        serialized_sellers = serialize_seller(sellers)
+        
+        return jsonify(serialized_sellers)
+        
+    except SQLAlchemyError as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+    
+@seller_db_bp.route("/get-one/<string:id>", methods=["GET"])
+@require_api_key
+def get_one_seller(id):
+    try:
+        seller = get_one_db_seller(id)
+        
+        if not seller:
+            return jsonify({"message": "No seller found!"}), 404
+        
+        serialized_seller = serialize_seller([seller])
+        
+        return jsonify(serialized_seller)
+        
+    except SQLAlchemyError as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+    
+@seller_db_bp.route("/get-one-by-name/<string:name>", methods=["GET"])
+@require_api_key
+def get_one_seller_by_name(name):
+    try:
+        seller = get_one_db_seller_by_name(name)
+        
+        if not seller:
+            return jsonify({"message": "No seller found!"}), 404
+        
+        serialized_seller = serialize_seller([seller])
+        
+        return jsonify(serialized_seller)
+    
+    except SQLAlchemyError as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+    
+@seller_db_bp.route("/get-one-by-cnpj/<string:name>", methods=["GET"])
+@require_api_key
+def get_one_seller_by_cnpj(cnpj):
+    try:
+        seller = get_one_db_seller_by_cnpj(cnpj)
+        
+        if not seller:
+            return jsonify({"message": "No seller found!"}), 404
+        
+        serialized_seller = serialize_seller([seller])
+        
+        return jsonify(serialized_seller)
+    
+    except SQLAlchemyError as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+    
+@seller_db_bp.route("/update/<string:id>", methods=["PUT"])
+@require_api_key
+def update_seller(id):
+    data = request.get_json()
+    
+    try:
+        seller = get_one_db_seller(id)
+        
+        if not seller:
+            return jsonify({"message": f"Seller with id {id} not found!"}), 404
+        
+        seller = Seller(
+            name=data.get("name"),
+            cnpj=data.get("cnpj")
+        )
+        
+        serialized_seller = serialize_seller([seller])
+        
+        db.session.commit()
+        
+        return jsonify({
+            "message": f"Seller with with id {id} updated successfully!",
+            "updated": serialized_seller
+            })
+    
+    except SQLAlchemyError as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+
+    
+@seller_db_bp.route("/delete/<string:id>", methods=["DELETE"])
+@require_api_key
+def delete_seller(id):
+    try:
+        seller = get_one_db_seller(id)
+        
+        if not seller:
+            return jsonify({"message": f"Seller with id {id} not found!"}), 404
+        
+        serialized_seller = serialize_seller([seller])
+        
+        return jsonify(serialized_seller)
+    
+    except SQLAlchemyError as e:
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
 @seller_db_bp.route("/create-label/<string:id_seller>", methods=["POST"])

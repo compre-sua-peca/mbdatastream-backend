@@ -1,4 +1,30 @@
-from app.models import CustomShowcase, Label
+from app.models import CustomShowcase, Label, Seller
+
+""" Seller functions """
+
+def get_all_db_sellers():
+    sellers = Seller.query.all()
+    
+    return sellers
+
+
+def get_one_db_seller(id):
+    seller = Seller.query.filter_by(id=id).first()
+    
+    return seller
+
+
+def get_one_db_seller_by_name(name):
+    seller = Seller.query.filter_by(name=name).first()
+    
+    return seller
+
+
+def get_one_db_seller_by_cnpj(cnpj):
+    seller = Seller.query.filter_by(cnpj=cnpj).first()
+    
+    return seller
+
 
 """ Labels functions """
 

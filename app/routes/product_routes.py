@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import text, or_
 from app.models import Product, Images
 from app.extensions import db
-from app.utils.functions import process_excel
+from app.services.product_service import process_excel
 import tempfile
 import os
 from app.dal.S3_client import S3ClientSingleton
