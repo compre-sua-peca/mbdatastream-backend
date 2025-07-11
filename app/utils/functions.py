@@ -1,4 +1,6 @@
 import asyncio
+
+from flask import json
 from app.models import Images
 from app.extensions import db
 
@@ -172,10 +174,48 @@ def serialize_seller(sellers):
     return result
 
 
+def serialize_one_seller(seller):
+    result = {
+        "id": seller.id,
+        "name": seller.name,
+        "cnpj": seller.cnpj
+    }
+    
+    return result
+
+
 def serialize_seller_showcase_items(seller_showcase_items):
     result = []
     
     for item in seller_showcase_items:
+        # Get the raw images as string (JSON)
+        raw_images = item.images
+        
+        # Parse the strings
+        if isinstance(raw_images, str):
+            try:
+                parsed = json.loads(raw_images)
+                
+                images_list = parsed if isinstance(parsed, list) else []
+                
+            except json.JSONDecodeError:
+                images_list = []
+                
+        else:
+            images_list = raw_images
+            
+        images = []
+        
+        # Normalize each entry to a dict with the url
+        for img in images_list:
+            if isinstance(img, dict) and "url" in img:
+                images.append(img["url"])
+                
+            elif isinstance(img, str):
+                images.append(img)
+                
+            else:
+                continue
         
         result.append({
             "order": item.order,
@@ -189,7 +229,8 @@ def serialize_seller_showcase_items(seller_showcase_items):
             "gear_dimensions": item.gear_dimensions,
             "description": item.description,
             "is_active": item.is_active,
-            "is_manufactured": item.is_manufactured
+            "is_manufactured": item.is_manufactured,
+            "images": images
         })
         
     return result
