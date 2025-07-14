@@ -399,7 +399,7 @@ def get_seller_showcase_items(id_seller):
 
         for label in serialized_labels:
             seller_showcase_products_sql = text("""
-                SELECT
+                SELECT DISTINCT
                     cs.`order`,
                     cs.name            AS label,
                     p.*,
@@ -445,6 +445,60 @@ def get_seller_showcase_items(id_seller):
 
         db.session.rollback()
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+    
+
+@seller_db_bp.route("/get-seller-showcase/<string:id_seller>/<string:label>", methods=["GET"])
+@require_api_key
+def get_seller_showcase_item(id_seller, label):
+    try:
+        seller_showcase_product_sql = text("""
+            SELECT DISTINCT
+                    cs.`order`,
+                    cs.name            AS label,
+                    p.*,
+                    COALESCE(
+                        (
+                        SELECT JSON_ARRAYAGG(
+                                JSON_OBJECT(
+                                    'url', img.url
+                                ))
+                        FROM images img
+                        WHERE img.cod_product = p.cod_product
+                        ),
+                        JSON_ARRAY()  /* empty array if no images */
+                    ) AS images
+                FROM custom_showcase cs
+                JOIN label       l  ON l.id_seller    = :id_seller
+                JOIN product     p  ON p.cod_product  = cs.cod_product
+                WHERE cs.name = :label
+                ORDER BY cs.`order`;                                    
+        """)
+        
+        item_by_label = {}
+    
+        
+        result = db.session.execute(
+            seller_showcase_product_sql,
+            {
+                "label": f"{label}",
+                "id_seller": f"{id_seller}"
+            }
+        )
+        
+        if not result:
+            return jsonify({"message": "No showcase item found!"}), 404
+        
+        serialized_showcase_item = serialize_seller_showcase_items(result)
+        
+        for item in serialized_showcase_item:
+            item_by_label.setdefault(label, []).append(item)
+        
+        return jsonify(item_by_label)
+    
+    except SQLAlchemyError as e:
+        
+        db.session.rollback()
+        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
 @seller_db_bp.route("/update-showcase-items/<string:id_seller>/<string:label>", methods=["PUT"])
@@ -486,17 +540,25 @@ def update_showcase_items(id_seller, label):
                 cod_product=cod_product,
                 name=label
             ).first()
+            
+            # if existing_item:
+            #     existing_item.order = new_order
 
-            if existing_item:
-                existing_item.order = new_order
-
-            else:
+            if not existing_item:
                 new_showcase_item = CustomShowcase(
                     cod_product=cod_product,
                     order=new_order,
                     name=label
                 )
                 db.session.add(new_showcase_item)
+
+            # else:
+            #     new_showcase_item = CustomShowcase(
+            #         cod_product=cod_product,
+            #         order=new_order,
+            #         name=label
+            #     )
+            #     db.session.add(new_showcase_item)
 
         db.session.commit()
         return jsonify({"message": f"Label '{label}' updated successfully"}), 200
@@ -506,6 +568,31 @@ def update_showcase_items(id_seller, label):
         db.session.rollback()
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
+
+@seller_db_bp.route("/delete-custom-showcase/<string:label>", methods=["DELETE"])
+@require_api_key
+def delete_custom_showcase(label):
+    try:
+        existing_custom_showcase = Label.query.filter_by(
+            name=label
+        ).first()
+        
+        if not existing_custom_showcase:
+            return jsonify({"message": f"Vitrine {label} não existe para ser deletada!"})
+        
+        CustomShowcase.query.filter_by(
+            name=label
+        ).delete()
+        
+        db.session.commit()
+        
+        return jsonify({"message": f"Vitrine de {label} deletada com sucesso!"}), 200
+        
+    except SQLAlchemyError as e:
+        db.session.rollback()
+        
+        return jsonify({"error": f"An error ocurred: {str(e)}"}), 500
+        
 
 @seller_db_bp.route("/delete-showcase-item/<string:cod_product>", methods=["DELETE"])
 @require_api_key
