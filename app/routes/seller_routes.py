@@ -1,7 +1,8 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, Response, json, jsonify, request
 from app.dal.dynamo_client import DynamoSingleton
 from app.models import Product
-from app.utils.functions import serialize_product
+from app.services.seller_db_service import get_all_labeled_custom_showcases, get_all_labels
+from app.utils.functions import serialize_product, serialize_label
 
 
 seller_bp = Blueprint("sellers", __name__)
@@ -33,9 +34,15 @@ def get_showcase():
     
     seller = dynamo_client.get_item_by_hash_key(table, key_name, seller_domain)
     
+    labels = get_all_labels(id_seller)
+    
+    serialized_labels = serialize_label(labels)
+    
     tags = seller.get("tags", [])
     
     showcase = {}
+    
+    custom_showcase = {}
     
     for tag in tags:
         # Debug: Print tag values
@@ -55,8 +62,14 @@ def get_showcase():
         product = serialize_product(pagination)
         
         showcase[tag_name] = product
+        
+    custom_showcase = get_all_labeled_custom_showcases(serialized_labels, id_seller)
     
-    return jsonify(showcase)
+    all_showcases = {**custom_showcase, **showcase}
+    
+    payload = json.dumps(all_showcases, ensure_ascii=False, sort_keys=False)
+    
+    return Response(payload, mimetype='application/json')
 
     
     

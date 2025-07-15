@@ -4,7 +4,7 @@ from app.extensions import db
 from app.middleware.api_token import require_api_key
 from app.models import Seller, Label, CustomShowcase
 from sqlalchemy.exc import SQLAlchemyError
-from app.services.seller_db_service import get_all_db_sellers, get_one_db_seller, get_all_labels, get_all_showcase_items, get_one_db_seller_by_cnpj, get_one_db_seller_by_name, get_one_label, get_one_similar_label
+from app.services.seller_db_service import get_all_db_sellers, get_one_db_seller, get_all_labels, get_all_showcase_items, get_one_db_seller_by_cnpj, get_one_db_seller_by_name, get_one_label, get_one_similar_label, get_all_labeled_custom_showcases
 from app.utils.functions import serialize_label, serialize_custom_showcase, serialize_seller_showcase_items, serialize_seller, serialize_one_seller
 
 
@@ -395,49 +395,7 @@ def get_seller_showcase_items(id_seller):
 
         serialized_labels = serialize_label(labels)
 
-        items_by_label = {}
-
-        for label in serialized_labels:
-            seller_showcase_products_sql = text("""
-                SELECT DISTINCT
-                    cs.`order`,
-                    cs.name            AS label,
-                    p.*,
-                    COALESCE(
-                        (
-                        SELECT JSON_ARRAYAGG(
-                                JSON_OBJECT(
-                                    'url', img.url
-                                ))
-                        FROM images img
-                        WHERE img.cod_product = p.cod_product
-                        ),
-                        JSON_ARRAY()  /* empty array if no images */
-                    ) AS images
-                FROM custom_showcase cs
-                JOIN label       l  ON l.id_seller    = :id_seller
-                JOIN product     p  ON p.cod_product  = cs.cod_product
-                WHERE cs.name = :label
-                ORDER BY cs.`order`;         
-            """)
-
-            label_name = label.get("name")
-
-            result = db.session.execute(
-                seller_showcase_products_sql,
-                {
-                    "label": f"{label_name}",
-                    "id_seller": f"{id_seller}"
-                }
-            )
-
-            if not result:
-                return jsonify({"message": "No showcase items found!"}), 404
-
-            serialized_showcase_items = serialize_seller_showcase_items(result)
-
-            for item in serialized_showcase_items:
-                items_by_label.setdefault(label_name, []).append(item)
+        items_by_label = get_all_labeled_custom_showcases(serialized_labels, id_seller)
 
         return jsonify(items_by_label)
 
