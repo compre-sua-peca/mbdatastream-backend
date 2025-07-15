@@ -3,7 +3,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import text, or_
 from app.models import Product, Images
 from app.extensions import db
-from app.utils.functions import process_excel
+from app.services.product_service import process_excel
 import tempfile
 import os
 from app.dal.S3_client import S3ClientSingleton
@@ -35,6 +35,43 @@ def get_products():
         "meta": meta
     }), 200
 
+@product_bp.route("/get-all-by-seller/<string:id_seller>", methods=["GET"])
+def get_products_by_seller(id_seller):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    is_manufactured_str = request.args.get("is_manufactured")
+
+    is_manufactured = None
+    if is_manufactured_str is not None:
+        is_manufactured = is_manufactured_str.lower() == "true"
+
+    pagination = None
+
+    if is_manufactured is None:
+        pagination = Product.query.filter(
+            Product.id_seller == id_seller
+        ).paginate(page=page, per_page=per_page, error_out=False)
+
+    else:
+        pagination = Product.query.filter(
+            Product.is_manufactured == is_manufactured,
+            Product.id_seller == id_seller
+        ).paginate(page=page, per_page=per_page, error_out=False)
+
+    filtered_products = serialize_product(pagination.items)
+
+    meta = serialize_meta_pagination(
+        pagination.total,
+        pagination.pages,
+        pagination.page,
+        pagination.per_page
+    )
+
+    return jsonify({
+        "products": filtered_products,
+        "meta": meta
+    }), 200
+    
 
 @product_bp.route("/category/<string:hash_category>", methods=["GET"])
 def get_products_by_category(hash_category):
