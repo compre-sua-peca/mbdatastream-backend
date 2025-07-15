@@ -1,4 +1,8 @@
+from flask import jsonify
+from sqlalchemy import text
 from app.models import CustomShowcase, Label, Seller
+from app.extensions import db
+from app.utils.functions import serialize_seller_showcase_items
 
 """ Seller functions """
 
@@ -62,3 +66,50 @@ def get_one_showcase_item(item):
     ).first()
     
     return item
+
+def get_all_labeled_custom_showcases(serialized_labels, id_seller):
+    items_by_label = {}
+
+    for label in serialized_labels:
+        seller_showcase_products_sql = text("""
+            SELECT DISTINCT
+                cs.`order`,
+                cs.name            AS label,
+                p.*,
+                COALESCE(
+                    (
+                    SELECT JSON_ARRAYAGG(
+                            JSON_OBJECT(
+                                'url', img.url
+                            ))
+                    FROM images img
+                    WHERE img.cod_product = p.cod_product
+                    ),
+                    JSON_ARRAY()  /* empty array if no images */
+                ) AS images
+            FROM custom_showcase cs
+            JOIN label       l  ON l.id_seller    = :id_seller
+            JOIN product     p  ON p.cod_product  = cs.cod_product
+            WHERE cs.name = :label
+            ORDER BY cs.`order`;         
+        """)
+
+        label_name = label.get("name")
+
+        result = db.session.execute(
+            seller_showcase_products_sql,
+            {
+                "label": f"{label_name}",
+                "id_seller": f"{id_seller}"
+            }
+        )
+
+        if not result:
+            return jsonify({"message": "No showcase items found!"}), 404
+
+        serialized_showcase_items = serialize_seller_showcase_items(result)
+
+        for item in serialized_showcase_items:
+            items_by_label.setdefault(label_name, []).append(item)
+    
+    return items_by_label
