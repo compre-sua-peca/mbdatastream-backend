@@ -311,7 +311,7 @@ def create_custom_showcase():
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-@seller_db_bp.route("/create-label-showcase/<string:id_seller>", methods=["POST"])
+@seller_db_bp.route("/create-label-custom-showcase/<string:id_seller>", methods=["POST"])
 @require_api_key
 def create_label_and_showcase(id_seller):
     data = request.get_json() or {}
@@ -367,7 +367,7 @@ def create_label_and_showcase(id_seller):
         }), 500
 
 
-@seller_db_bp.route("/get-all-showcase-items", methods=["GET"])
+@seller_db_bp.route("/get-all-custom-showcase-items", methods=["GET"])
 @require_api_key
 def get_custom_showcase_items():
     try:
@@ -387,7 +387,7 @@ def get_custom_showcase_items():
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-@seller_db_bp.route("/get-seller-showcase-items/<string:id_seller>", methods=["GET"])
+@seller_db_bp.route("/get-seller-custom-showcase-items/<string:id_seller>", methods=["GET"])
 @require_api_key
 def get_seller_showcase_items(id_seller):
     try:
@@ -447,7 +447,7 @@ def get_seller_showcase_items(id_seller):
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
     
 
-@seller_db_bp.route("/get-seller-showcase/<string:id_seller>/<string:label>", methods=["GET"])
+@seller_db_bp.route("/get-seller-custom-showcase/<string:id_seller>/<string:label>", methods=["GET"])
 @require_api_key
 def get_seller_showcase_item(id_seller, label):
     try:
@@ -501,7 +501,7 @@ def get_seller_showcase_item(id_seller, label):
         return jsonify({"error": f"An error occurred: {str(e)}"}), 500
 
 
-@seller_db_bp.route("/update-showcase-items/<string:id_seller>/<string:label>", methods=["PUT"])
+@seller_db_bp.route("/update-custom-showcase-items/<string:id_seller>/<string:label>", methods=["PUT"])
 @require_api_key
 def update_showcase_items(id_seller, label):
     try:
@@ -561,7 +561,7 @@ def update_showcase_items(id_seller, label):
             #     db.session.add(new_showcase_item)
 
         db.session.commit()
-        return jsonify({"message": f"Label '{label}' updated successfully"}), 200
+        return jsonify({"message": f"Rótulo '{label}' atualizado com sucesso!"}), 200
 
     except SQLAlchemyError as e:
 
@@ -584,6 +584,10 @@ def delete_custom_showcase(label):
             name=label
         ).delete()
         
+        Label.query.filter_by(
+            name=label
+        ).delete()
+        
         db.session.commit()
         
         return jsonify({"message": f"Vitrine de {label} deletada com sucesso!"}), 200
@@ -594,7 +598,7 @@ def delete_custom_showcase(label):
         return jsonify({"error": f"An error ocurred: {str(e)}"}), 500
         
 
-@seller_db_bp.route("/delete-showcase-item/<string:cod_product>", methods=["DELETE"])
+@seller_db_bp.route("/delete-custom-showcase-item/<string:cod_product>", methods=["DELETE"])
 @require_api_key
 def delete_showcase_item(cod_product):
     try:
@@ -609,7 +613,7 @@ def delete_showcase_item(cod_product):
         db.session.commit()
 
         return jsonify({
-            "message": f"Showcase item with product code '{cod_product}' deleted successfully"
+            "message": f"Item de vitrine com código '{cod_product}' deletado com sucesso!"
         })
 
     except SQLAlchemyError as e:
