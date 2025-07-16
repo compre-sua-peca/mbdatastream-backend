@@ -1,6 +1,7 @@
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
+from app.middleware.api_token import require_api_key
 from app.models import Compatibility, SellerVehicles, Vehicle, VehicleBrand
 from app.extensions import db
 from app.utils.functions import serialize_vehicle, serialize_meta_pagination, serialize_product, serialize_vehicle_product_count
@@ -10,6 +11,7 @@ vehicle_bp = Blueprint("vehicles", __name__)
 
 
 @vehicle_bp.route("/all", methods=["GET"])
+@require_api_key
 def get_vehicles_count_prods():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -46,6 +48,7 @@ def get_vehicles_count_prods():
 
 
 @vehicle_bp.route("/brand/<string:hash_brand>", methods=["GET"])
+@require_api_key
 def get_by_vehicle_brand(hash_brand):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -87,6 +90,7 @@ def get_by_vehicle_brand(hash_brand):
 
 # Create a new vehicle
 @vehicle_bp.route("/", methods=["POST"])
+@require_api_key
 def create_vehicle():
     data = request.get_json()
     new_vehicle = Vehicle(
@@ -102,6 +106,7 @@ def create_vehicle():
 
 # Retrieve a single vehicle by its vehicle_name
 @vehicle_bp.route("/<string:vehicle_name>", methods=["GET"])
+@require_api_key
 def get_vehicle(vehicle_name):
     vehicle = Vehicle.query.filter_by(vehicle_name=vehicle_name).first()
     if not vehicle:
@@ -118,6 +123,7 @@ def get_vehicle(vehicle_name):
 
 # Retrieve a single vehicle by its vehicle_name
 @vehicle_bp.route("/search/<string:vehicle_name>", methods=["GET"])
+@require_api_key
 def search_vehicle(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -162,6 +168,7 @@ def search_vehicle(vehicle_name):
 
 # Create seller vehicles relationships
 @vehicle_bp.route("/create-seller-vehicles", methods=["POST"])
+@require_api_key
 def add_seller_vehicles_by_brand():
     brand_name = request.args.get("brand_name")
     id_seller = request.args.get("id_seller", type=int)
@@ -209,6 +216,7 @@ def add_seller_vehicles_by_brand():
     
     
 @vehicle_bp.route("/create-multiple-seller-vehicles", methods=["POST"])
+@require_api_key
 def add_seller_vehicles_by_brands():
     id_seller = request.args.get("id_seller", type=int)
     brand_names = request.json.get("brand_names") if request.is_json else request.args.getlist("brand_name")
@@ -267,6 +275,7 @@ def add_seller_vehicles_by_brands():
 
 # Update an existing vehicle
 @vehicle_bp.route("/<string:vehicle_name>", methods=["PUT"])
+@require_api_key
 def update_vehicle(vehicle_name):
     vehicle = Vehicle.query.filter_by(vehicle_name=vehicle_name).first()
     if not vehicle:
@@ -283,6 +292,7 @@ def update_vehicle(vehicle_name):
 
 # DELETE: Remove a vehicle
 @vehicle_bp.route("/<string:vehicle_name>", methods=["DELETE"])
+@require_api_key
 def delete_vehicle(vehicle_name):
     vehicle = Vehicle.query.filter_by(vehicle_name=vehicle_name).first()
     if not vehicle:

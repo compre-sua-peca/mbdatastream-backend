@@ -1,6 +1,7 @@
 import math
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text, or_
+from app.middleware.api_token import require_api_key
 from app.models import Product, Images
 from app.extensions import db
 from app.services.product_service import process_excel
@@ -14,6 +15,7 @@ product_bp = Blueprint("products", __name__)
 
 
 @product_bp.route("/all", methods=["GET"])
+@require_api_key
 def get_products():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -36,6 +38,7 @@ def get_products():
     }), 200
 
 @product_bp.route("/get-all-by-seller/<string:id_seller>", methods=["GET"])
+@require_api_key
 def get_products_by_seller(id_seller):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -74,6 +77,7 @@ def get_products_by_seller(id_seller):
     
 
 @product_bp.route("/category/<string:hash_category>", methods=["GET"])
+@require_api_key
 def get_products_by_category(hash_category):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -128,6 +132,7 @@ def get_products_by_category(hash_category):
 
 
 @product_bp.route("/search/<string:search_term>", methods=["GET"])
+@require_api_key
 def search_product(search_term):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -184,6 +189,7 @@ def search_product(search_term):
 
 
 @product_bp.route("/compatibility/<string:vehicle_name>", methods=["GET"])
+@require_api_key
 def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -322,6 +328,7 @@ def get_by_compatibility(vehicle_name):
 
 
 @product_bp.route("/compatibility-all/<string:vehicle_name>", methods=["GET"])
+@require_api_key
 def get_all_by_compatibility(vehicle_name):
     if not vehicle_name:
         return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
@@ -420,6 +427,7 @@ def get_all_by_compatibility(vehicle_name):
 
 
 @product_bp.route("/", methods=["POST"])
+@require_api_key
 def create_product():
     data = request.json
 
@@ -441,6 +449,7 @@ def create_product():
 
 
 @product_bp.route("/create-from-csv", methods=["POST"])
+@require_api_key
 def create_products_from_csv():
     if 'file' not in request.files:
         return jsonify({"message": "Nenhum arquivo enviado"}), 400
@@ -473,6 +482,7 @@ def create_products_from_csv():
 
 
 @product_bp.route("/<string:cod_product>", methods=["GET"])
+@require_api_key
 def get_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
 
@@ -505,6 +515,7 @@ def get_product(cod_product):
 
 
 @product_bp.route("/<string:cod_product>", methods=["PUT"])
+@require_api_key
 def update_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
 
@@ -528,6 +539,7 @@ def update_product(cod_product):
 
 
 @product_bp.route("/upload-product-images-by-folder", methods=["POST"])
+@require_api_key
 def upload_product_images_by_folder():
     s3_client = S3ClientSingleton()
 
@@ -593,6 +605,7 @@ def upload_product_images_by_folder():
 
 
 @product_bp.route("/upload-product-images-by-s3", methods=["POST"])
+@require_api_key
 def upload_product_images_by_s3():
     s3_client = S3ClientSingleton()
 
@@ -658,6 +671,7 @@ def upload_product_images_by_s3():
 
 
 @product_bp.route("/<string:cod_product>", methods=["DELETE"])
+@require_api_key
 def delete_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
 
@@ -686,6 +700,7 @@ def delete_product(cod_product):
 
 
 @product_bp.route("/seller/<int:id_seller>", methods=["DELETE"])
+@require_api_key
 def delete_products_by_seller(id_seller):
     # Search all products by seller
     products = Product.query.filter_by(id_seller=id_seller).all()
@@ -728,6 +743,7 @@ def delete_products_by_seller(id_seller):
 
 
 @product_bp.route("/sync-images", methods=["PATCH"])
+@require_api_key
 def sync_images():
     s3_client = S3ClientSingleton()
 
