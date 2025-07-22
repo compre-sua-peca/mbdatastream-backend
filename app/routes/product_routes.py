@@ -1,13 +1,15 @@
+import json
 import math
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text, or_
-from app.models import Product, Images, Category, Compatibility, Vehicle, VehicleBrand, Seller
+from app.models import Product, Images, Category, Compatibility, Vehicle, VehicleBrand, Seller, SellerBrands, SellerVehicles, SellerCategories
 from app.extensions import db
 from app.utils.functions import process_excel
 import tempfile
 import os
 from app.dal.S3_client import S3ClientSingleton
-from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_product, serialize_meta_pagination
+from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_products, serialize_meta_pagination
+from app.dal.encryptor import HashGenerator
 
 
 product_bp = Blueprint("products", __name__)
@@ -21,7 +23,7 @@ def get_products():
     pagination = Product.query.paginate(
         page=page, per_page=per_page, error_out=False)
 
-    products = serialize_product(pagination.items)
+    products = serialize_products(pagination.items)
 
     meta = serialize_meta_pagination(
         pagination.total,
@@ -73,7 +75,7 @@ def get_products_by_category(hash_category):
             page=page, per_page=per_page, error_out=False
         )
 
-    products = serialize_product(pagination.items)
+    products = serialize_products(pagination.items)
 
     print(products)
 
@@ -131,7 +133,7 @@ def search_product(search_term):
             Product.id_seller == id_seller
         ).paginate(page=page, per_page=per_page, error_out=False)
 
-    filtered_products = serialize_product(pagination.items)
+    filtered_products = serialize_products(pagination.items)
 
     meta = serialize_meta_pagination(
         pagination.total,
@@ -360,7 +362,7 @@ def get_all_by_compatibility(vehicle_name):
     # Convert dictionary to list
     products_list = list(products_dict.values())
 
-    # products = serialize_product(products_list)
+    # products = serialize_products(products_list)
 
     # Get total for pagination
     count_sql = text("""
@@ -395,6 +397,7 @@ def create_product():
         gear_dimensions=data["gear_dimensions"],
         cross_reference=data["cross_reference"],
         hash_category=data["hash_category"]
+        # hash_brand=data["hash_brand"]
     )
 
     db.session.add(new_product)
@@ -663,16 +666,16 @@ def delete_products_by_seller(id_seller):
             # Delete all linked images to the product
             for image in product.images:
                 db.session.delete(image)
-                
+
             # Delete all linked compatibilities of that product
             for comp in product.compatibilities:
                 db.session.delete(comp)
-                
+
             db.session.delete(product)
             deleted_count += 1
-            
+
         db.session.commit()
-        
+
         return (
             jsonify(
                 {
@@ -757,15 +760,15 @@ def create_one_product_with_category_and_compatibilty():
     try:
         category = Product.query.get(product)
     except Exception as e:
-        return jsonify({"error": f"Erro ao consultar categoria: {str(e)}"}), 400
+        return jsonify({"error": f"Erro ao consultar produto: {str(e)}"}), 400
 
     if category:
         return jsonify({"message": "Produto já existe."}), 400
-    else:        
+    else:
         new_product = Product(
             cod_product=data["cod_product"],
             name_product=data["name_product"],
-            bar_code= int(data["bar_code"]),
+            bar_code=int(data["bar_code"]),
             gear_quantity=data["gear_quantity"],
             gear_dimensions=data["gear_dimensions"],
             cross_reference=data["cross_reference"],
@@ -773,7 +776,7 @@ def create_one_product_with_category_and_compatibilty():
             hash_category=data["hash_category"],
             id_seller=int(data["id_seller"]),
         )
-        
+
         try:
             db.session.add(new_product)
             compatibilities = data["compatibilities"]
@@ -782,13 +785,120 @@ def create_one_product_with_category_and_compatibilty():
                     cod_product=new_product.cod_product,
                     vehicle_name=compat
                 )
-                
+
                 db.session.add(new_compatibilty)
-                
+
             db.session.commit()
-            
+
             return jsonify({"message": "Produto criado com sucesso"}), 201
 
         except Exception as e:
             db.session.rollback()
             return jsonify({"error": f"Erro ao adicionar produto: {str(e)}"}), 400
+
+
+@product_bp.route("/create-product-compatibility", methods=["POST"])
+def create_product_and_compatibilty():
+    name_product = request.form.get("name")
+    cod_product = request.form.get("cod_product")
+    bar_code = request.form.get("bar_code")
+    is_manufactured: bool = request.form.get("is_manufactured")
+    gear_quantity = request.form.get("gear_quantity")
+    gear_dimensions = request.form.get("gear_dimensions")
+    cross_reference = request.form.get("cross_reference")
+    hash_category = request.form.get("category")
+    description = request.form.get("description")
+    images = request.files.getlist("images")
+
+    id_seller = request.args.get("id_seller", type=int)
+    compatibilities_array = request.form.get("compatibilities")
+    compatibilities = json.loads(compatibilities_array)
+
+    try:
+        if not Product.query.get(cod_product):
+            new_product = Product(
+                cod_product=cod_product, 
+                name_product=name_product,
+                description=description, 
+                bar_code=bar_code,
+                gear_quantity=gear_quantity, 
+                gear_dimensions=gear_dimensions,
+                cross_reference=cross_reference,
+                hash_category=hash_category, 
+                id_seller=id_seller,
+                is_manufactured= bool(is_manufactured)
+            )
+            db.session.add(new_product)
+
+        if not SellerCategories.query.get((id_seller, hash_category)):
+            db.session.add(SellerCategories(
+                id_seller=id_seller,
+                hash_category=hash_category
+            ))
+
+        for comp in compatibilities:
+            vehicle_name = comp["vehicle_name"]
+
+            if not Compatibility.query.get((cod_product, vehicle_name)):
+                db.session.add(Compatibility(
+                    cod_product=cod_product,
+                    vehicle_name=vehicle_name
+                ))
+
+            # if not SellerBrands.query.get((id_seller, hash_brand)):
+            #     db.session.add(SellerBrands(
+            #         id_seller=id_seller,
+            #         hash_brand=hash_brand
+            #     ))
+
+            # if not SellerVehicles.query.get((id_seller, vehicle_name)):
+            #     db.session.add(SellerVehicles(
+            #         id_seller=id_seller,
+            #         vehicle_name=vehicle_name
+            #     ))
+
+        s3 = S3ClientSingleton()
+        
+        urls = []
+        
+        for img in images:
+            url = s3.upload_to_s3(image=img)
+
+            db.session.add(Images(
+                cod_product=cod_product,
+                id_image=name_product,
+                url=url
+            ))
+            urls.append(url)
+            
+        category = Category.query.filter_by(hash_category=hash_category).first()
+            
+        serialized_category = {
+            "hash_category": category.hash_category,
+            "name_category": category.name_category
+        }
+            
+        product_dict = {
+            "name_product": name_product,
+            "cod_product": cod_product,
+            "description": description,
+            "is_active": True,
+            "is_manufactured": bool(is_manufactured),
+            "bar_code": bar_code,
+            "gear_quantity": gear_quantity,
+            "gear_dimensions": gear_dimensions,
+            "cross_reference": cross_reference,
+            "category": serialized_category,
+            "images": urls,
+            "compatibilities": compatibilities
+        }
+
+        db.session.commit()
+        return jsonify({
+            "content": "produto cadastrado com sucesso!",
+            "product": product_dict
+        }), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": f"Erro ao popular o banco: {e}"}), 400

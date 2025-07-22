@@ -1,9 +1,9 @@
 from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
-from app.models import Compatibility, SellerVehicles, Vehicle, VehicleBrand
+from app.models import Compatibility, SellerVehicles, Vehicle, VehicleBrand, Product
 from app.extensions import db
-from app.utils.functions import serialize_vehicle, serialize_meta_pagination, serialize_product, serialize_vehicle_product_count
+from app.utils.functions import serialize_vehicle, serialize_meta_pagination, serialize_products, serialize_vehicle_product_count
 
 
 vehicle_bp = Blueprint("vehicles", __name__)
@@ -93,7 +93,8 @@ def create_vehicle():
         vehicle_name=data["vehicle_name"],
         start_year=data["start_year"],
         end_year=data["end_year"],
-        vehicle_type=data["vehicle_type"]
+        vehicle_type=data["vehicle_type"],
+        hash_brand=data["hash_brand"]
     )
     db.session.add(new_vehicle)
     db.session.commit()
@@ -101,7 +102,7 @@ def create_vehicle():
 
 
 # Retrieve a single vehicle by its vehicle_name
-@vehicle_bp.route("/<string:vehicle_name>", methods=["GET"])
+@vehicle_bp.route("/vehicle/<string:vehicle_name>", methods=["GET"])
 def get_vehicle(vehicle_name):
     vehicle = Vehicle.query.filter_by(vehicle_name=vehicle_name).first()
     if not vehicle:
@@ -291,3 +292,103 @@ def delete_vehicle(vehicle_name):
     db.session.delete(vehicle)
     db.session.commit()
     return jsonify({"message": "Vehicle deleted successfully!"}), 200
+
+
+@vehicle_bp.route("/create-compat", methods=["POST"])
+def create_vehicle_compatibility():
+
+    vehicle_payload = request.get_json()
+    
+    cod_product = vehicle_payload['cod_product']
+    vehicle_name = vehicle_payload['vehicle_name']
+
+    # Valida se o produto existe
+    product = Product.query.filter_by(cod_product=cod_product).first()
+    if not product:
+        return jsonify({"error": "Produto não encontrado"}), 404
+
+    # Valida se o veículo existe
+    vehicle = Vehicle.query.filter_by(vehicle_name=vehicle_name).first()
+    created_vehicle = None
+    
+    if not vehicle:
+        new_vehicle = Vehicle(
+            vehicle_name=vehicle_payload["vehicle_name"],
+            start_year=vehicle_payload["start_year"],
+            end_year=vehicle_payload["end_year"],
+            vehicle_type=vehicle_payload["vehicle_type"],
+            hash_brand=vehicle_payload["hash_brand"]
+        )
+        db.session.add(new_vehicle)
+        db.session.commit()
+        created_vehicle = new_vehicle
+    
+    else:
+        return jsonify({"erro": f"Veículo já existente: {vehicle_name}"}), 400
+    
+    # Verifica se já existe essa compatibilidade
+    existing = Compatibility.query.filter_by(
+        cod_product=cod_product,
+        vehicle_name=vehicle_name
+    ).first()
+
+    if existing:
+        return jsonify({"message": "Compatibilidade já existe"}), 400
+    # Cria nova compatibilidade
+    else:
+        new_compat = Compatibility(
+            cod_product=cod_product,
+            vehicle_name=new_vehicle.vehicle_name
+        )
+        db.session.add(new_compat)
+        db.session.commit()
+    
+    if created_vehicle:
+        return jsonify({
+            "message": "Compatibilidade criada com novo veículo",
+            "vehicle": {
+                "vehicle_name": vehicle_payload["vehicle_name"],
+                "start_year": vehicle_payload["start_year"],
+                "end_year": vehicle_payload["end_year"],
+                "vehicle_type": vehicle_payload["vehicle_type"],
+                "hash_brand": vehicle_payload["hash_brand"]
+            }
+        }), 201    
+    else:
+        return jsonify({"message": "Compatibilidade adicionada com sucesso!"}), 201
+   
+   
+
+   
+   
+   
+   
+   
+   
+    
+    # add_pproducts = Product(
+    #     cod_product=vehicle_payload.cod_product,
+    #     sku_product=vehicle_payload.sku_product,
+    #     name_product=vehicle_payload.name_product,
+    #     gear_dimension=vehicle_payload.gear_dimension,
+    #     cross_reference=vehicle_payload.cross_reference,
+    #     hash_category=vehicle_payload.hash_category,
+    #     bar_code=vehicle_payload.bar_code,
+    #     id_seller=vehicle_payload.id_seller
+    # )
+    
+    # add_vehicle = Vehicle(
+    #     vehicle_name=vehicle_payload.vehicle_name,
+    #     vehicle_type=vehicle_payload.vehicle.type,
+    #     start_year=vehicle_payload.start_year,
+    #     end_year=vehicle_payload.end_year,
+    #     hash_brand=vehicle_payload.hash_brand,
+    #     id_seller=vehicle_payload.id_seller
+    # )
+    
+    # add_compatibility = Compatibility(
+    #     cod_product=vehicle_payload.cod_product,
+    #     vehicle_name=vehicle_payload.vehicle.name
+    # )
+    
+    

@@ -1,7 +1,7 @@
 from flask import Blueprint, jsonify, request
 from app.dal.dynamo_client import DynamoSingleton
 from app.models import Product
-from app.utils.functions import serialize_product
+from app.utils.functions import serialize_products
 
 
 seller_bp = Blueprint("sellers", __name__)
@@ -52,7 +52,7 @@ def get_showcase():
             id_seller=id_seller
         ).limit(per_page).all()
         
-        product = serialize_product(pagination)
+        product = serialize_products(pagination)
         
         showcase[tag_name] = product
     
