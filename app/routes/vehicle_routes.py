@@ -363,6 +363,7 @@ def create_vehicle_compatibility():
                 "vehicle_type": vehicle_payload["vehicle_type"],
                 "hash_brand": vehicle_payload["hash_brand"]
             }
-        }), 201    
+        }), 201
+        
     else:
         return jsonify({"message": "Compatibilidade adicionada com sucesso!"}), 201 
