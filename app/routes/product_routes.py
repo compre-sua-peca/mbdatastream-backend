@@ -37,6 +37,7 @@ def get_products():
         "meta": meta
     }), 200
 
+
 @product_bp.route("/get-all-by-seller/<string:id_seller>", methods=["GET"])
 @require_api_key
 def get_products_by_seller(id_seller):
@@ -74,7 +75,7 @@ def get_products_by_seller(id_seller):
         "products": filtered_products,
         "meta": meta
     }), 200
-    
+
 
 @product_bp.route("/category/<string:hash_category>", methods=["GET"])
 @require_api_key

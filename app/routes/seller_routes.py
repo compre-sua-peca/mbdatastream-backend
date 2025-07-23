@@ -11,7 +11,7 @@ seller_bp = Blueprint("sellers", __name__)
 
 @seller_bp.route("/<string:seller_domain>", methods=["GET"])
 @require_api_key
-def get_seller_info(seller_domain):    
+def get_seller_info(seller_domain):
     dynamo_client = DynamoSingleton()
     
     table = "CatalogSellers"
