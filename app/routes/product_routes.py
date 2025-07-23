@@ -845,17 +845,22 @@ def create_product_and_compatibilty():
                     vehicle_name=vehicle_name
                 ))
 
-            # if not SellerBrands.query.get((id_seller, hash_brand)):
-            #     db.session.add(SellerBrands(
-            #         id_seller=id_seller,
-            #         hash_brand=hash_brand
-            #     ))
+            hash_brand = ""
+            check_vehicle = Vehicle.query.get(vehicle_name)
+            if check_vehicle:
+                hash_brand = check_vehicle.hash_brand
+                
+            if hash_brand and not SellerBrands.query.get((id_seller, hash_brand)):
+                db.session.add(SellerBrands(
+                    id_seller=id_seller,
+                    hash_brand=hash_brand
+                ))
 
-            # if not SellerVehicles.query.get((id_seller, vehicle_name)):
-            #     db.session.add(SellerVehicles(
-            #         id_seller=id_seller,
-            #         vehicle_name=vehicle_name
-            #     ))
+            if not SellerVehicles.query.get((id_seller, vehicle_name)):
+                db.session.add(SellerVehicles(
+                    id_seller=id_seller,
+                    vehicle_name=vehicle_name
+                ))
 
         s3 = S3ClientSingleton()
         
