@@ -1,10 +1,11 @@
 import os
 from Crypto.Cipher import AES
 from Crypto.Hash import SHA256
-from numpy import pad
+from Crypto.Util.Padding import pad
+# from numpy import pad
 import hashlib
 
-
+##Alteração de lib "pad" do numpy para Crypto
 class HashGenerator:
     def __init__(self):
         # Get the secret for brand encryption from an environment variable
@@ -25,7 +26,7 @@ class HashGenerator:
         Encrypts the brand name deterministically using AES-256-CBC.
         Returns the hash in the format: "brand_name-encrypted_hex"
         """
-        treated_name = name.replace(" ", "")
+        treated_name: str = name.replace(" ", "")
         
         try:
             iv = self.generate_iv(treated_name)

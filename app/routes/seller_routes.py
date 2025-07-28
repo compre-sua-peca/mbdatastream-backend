@@ -3,7 +3,7 @@ from app.dal.dynamo_client import DynamoSingleton
 from app.middleware.api_token import require_api_key
 from app.models import Product
 from app.services.seller_db_service import get_all_labeled_custom_showcases, get_all_labels
-from app.utils.functions import serialize_product, serialize_label
+from app.utils.functions import serialize_label, serialize_products
 
 
 seller_bp = Blueprint("sellers", __name__)
@@ -62,7 +62,7 @@ def get_showcase():
             id_seller=id_seller
         ).limit(per_page).all()
         
-        product = serialize_product(pagination)
+        product = serialize_products(pagination)
         
         showcase[tag_name] = product
         

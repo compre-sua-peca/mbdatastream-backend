@@ -32,7 +32,7 @@ def extract_existing_product_codes():
 """ ----------------------------- Function to handle json from the database ------------------------------ """
 
 
-def serialize_product(products):
+def serialize_products(products):
     result = []
 
     for product in products:
