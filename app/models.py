@@ -110,8 +110,8 @@ class User(db.Model):
             "email": self.email
         }
 
-class User_seller(db.Model):
-    __tablename__ = 'user_seller'
+class SellerUsers(db.Model):
+    __tablename__ = 'seller_users'
     id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
     id_user = db.Column(db.Integer, db.ForeignKey('user.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
 
