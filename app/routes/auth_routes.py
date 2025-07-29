@@ -2,14 +2,16 @@ from flask import Blueprint, jsonify, request
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from app.extensions import db
-from app.models import User
+from app.middleware.api_token import require_api_key
+from app.models import User, SellerUsers
+from app.utils.functions import serialize_users
 
 
 auth_bp = Blueprint("authentication", __name__)
 
 
-@auth_bp.route("/register", methods=["POST"])
-def register():
+@auth_bp.route("/register/<string:id_seller>", methods=["POST"])
+def register(id_seller):
     data = request.get_json()
 
     username = data.get("username")
@@ -34,11 +36,19 @@ def register():
         cnpj=cnpj,
         whatsapp=whatsapp
     )
-
+    
     db.session.add(new_user)
+    db.session.flush()
+    
+    user_seller = SellerUsers(
+        id_seller=id_seller,
+        id_user=new_user.id
+    )
+
+    db.session.add(user_seller)
     db.session.commit()
 
-    return jsonify({"message": "User registered successfully!"}), 201
+    return jsonify({"message": "Usuário registrado com sucesso!"}), 201
 
 
 @auth_bp.route("/login", methods=["POST"])
@@ -77,3 +87,21 @@ def protected():
     return jsonify({
         "message": f"Bem vindo {user.username}",
     })
+    
+    
+@auth_bp.route("/get-seller-users/<string:id_seller>", methods=["GET"])
+@require_api_key
+def get_seller_users(id_seller):    
+    if not id_seller:
+        return jsonify({"error": "Query parameter 'id_seller' (integer) is required."}), 400
+    
+    user_rows = (
+        db.session.query(User)
+            .join(SellerUsers, SellerUsers.id_user == User.id)
+            .filter(SellerUsers.id_seller == id_seller)
+            .all()
+    )
+    
+    serialized_seller_users = serialize_users(user_rows)
+    
+    return jsonify(serialized_seller_users) 

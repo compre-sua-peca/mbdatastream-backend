@@ -23,10 +23,10 @@ def get_all_categories():
     # Join Category ← SellerCategories for this seller, ordered by display_order
     category_rows = (
         db.session.query(Category)
-        .join(SellerCategories, SellerCategories.hash_category == Category.hash_category)
-        .filter(SellerCategories.id_seller == id_seller)
-        .order_by(Category.display_order)
-        .all()
+            .join(SellerCategories, SellerCategories.hash_category == Category.hash_category)
+            .filter(SellerCategories.id_seller == id_seller)
+            .order_by(Category.display_order)
+            .all()
     )
 
     # Run your serializer to turn the Category models into plain dicts

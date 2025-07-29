@@ -184,6 +184,21 @@ def serialize_one_seller(seller):
     return result
 
 
+def serialize_users(users):
+    result = []
+    
+    for user in users:
+        result.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "cnpj": user.cnpj,
+            "whatsapp": user.whatsapp
+        })
+        
+    return result
+
+
 def serialize_seller_showcase_items(seller_showcase_items):
     result = []
     
