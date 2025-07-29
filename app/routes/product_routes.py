@@ -438,10 +438,12 @@ def create_product():
         cod_product=data["cod_product"],
         name_product=data["name_product"],
         bar_code=data["bar_code"],
+        description=data["description"],
         gear_quantity=data["gear_quantity"],
         gear_dimensions=data["gear_dimensions"],
         cross_reference=data["cross_reference"],
-        hash_category=data["hash_category"]
+        hash_category=data["hash_category"],
+        id_seller=data.get("id_seller")
         # hash_brand=data["hash_brand"]
     )
 
@@ -865,7 +867,7 @@ def create_product_and_compatibilty():
 
     id_seller = request.args.get("id_seller", type=int)
     compatibilities_array = request.form.get("compatibilities")
-    compatibilities = json.loads(compatibilities_array)
+    compatibilities = json.loads(compatibilities_array) if compatibilities_array else []
 
     try:
         if not Product.query.get(cod_product):
@@ -918,7 +920,6 @@ def create_product_and_compatibilty():
         s3 = S3ClientSingleton()
         
         urls = []
-        
         for img in images:
             url = s3.upload_to_s3(image=img)
 
@@ -960,3 +961,4 @@ def create_product_and_compatibilty():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Erro ao popular o banco: {e}"}), 400
+    
