@@ -32,7 +32,7 @@ def extract_existing_product_codes():
 """ ----------------------------- Function to handle json from the database ------------------------------ """
 
 
-def serialize_product(products):
+def serialize_products(products):
     result = []
 
     for product in products:
@@ -181,6 +181,21 @@ def serialize_one_seller(seller):
         "cnpj": seller.cnpj
     }
     
+    return result
+
+
+def serialize_users(users):
+    result = []
+    
+    for user in users:
+        result.append({
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "cnpj": user.cnpj,
+            "whatsapp": user.whatsapp
+        })
+        
     return result
 
 

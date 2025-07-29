@@ -468,11 +468,12 @@ def update_showcase_items(id_seller, label):
         if not data or 'items' not in data:
             return jsonify({"message": "No items data provided"}), 400
 
-        existing_label = Label.query.filter_by(
-            name=label, id_seller=id_seller).first()
+        existing_label = Label.query.filter_by(name=label, id_seller=id_seller).first()
 
         if not existing_label:
-            return jsonify({"message": f"Label '{label}' does not exist for seller {id_seller}"}), 404
+            return jsonify({"message": f"O rótulo '{label}' não existe para ser atualizado!"}), 404
+        
+        new_label = data.get("name", label)
 
         items = data['items']
 
@@ -481,6 +482,24 @@ def update_showcase_items(id_seller, label):
 
         new_items_data = {item['cod_product']: item for item in items}
         new_cod_products = set(new_items_data.keys())
+        
+        if new_label != label:  
+            existing_new_label = Label.query.filter_by(name=new_label, id_seller=id_seller).first()
+        
+            if existing_new_label:
+                return jsonify({"message": f"O rótulo '{new_label}' já existe!"})
+                  
+            # Update the label name
+            existing_label.name = new_label
+            
+            # Update all existing CustomShowcase items to use the new label name
+            CustomShowcase.query.filter_by(name=label).update(
+                {CustomShowcase.name: new_label},
+                synchronize_session=False
+            )
+            
+            # Update the label reference for further processing
+            label = new_label
 
         items_to_delete = current_cod_products - new_cod_products
 
@@ -496,13 +515,13 @@ def update_showcase_items(id_seller, label):
 
             existing_item = CustomShowcase.query.filter_by(
                 cod_product=cod_product,
-                name=label
+                name=data["name"]
             ).first()
             
-            # if existing_item:
-            #     existing_item.order = new_order
+            if existing_item:
+                existing_item.order = new_order
 
-            if not existing_item:
+            else:
                 new_showcase_item = CustomShowcase(
                     cod_product=cod_product,
                     order=new_order,
@@ -510,16 +529,13 @@ def update_showcase_items(id_seller, label):
                 )
                 db.session.add(new_showcase_item)
 
-            # else:
-            #     new_showcase_item = CustomShowcase(
-            #         cod_product=cod_product,
-            #         order=new_order,
-            #         name=label
-            #     )
-            #     db.session.add(new_showcase_item)
-
         db.session.commit()
-        return jsonify({"message": f"Rótulo '{label}' atualizado com sucesso!"}), 200
+        
+        success_message = f"Rótulo '{label}' atualizado com sucesso!"
+        if new_label != data.get('new_label_name', label):
+            success_message = f"Rótulo renomeado para '{label}' e atualizado com sucesso!"
+        
+        return jsonify({"message": success_message}), 200
 
     except SQLAlchemyError as e:
 

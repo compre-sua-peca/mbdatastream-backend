@@ -2,6 +2,7 @@ import boto3
 import os
 from botocore.exceptions import NoCredentialsError
 
+
 class S3ClientSingleton:
     _instance = None
 
@@ -12,11 +13,12 @@ class S3ClientSingleton:
             instance.client = boto3.client(
                 's3',
                 aws_access_key_id=os.environ.get('CSP_AWS_ACCESS_KEY_ID'),
-                aws_secret_access_key=os.environ.get('CSP_AWS_SECRET_ACCESS_KEY'),
+                aws_secret_access_key=os.environ.get(
+                    'CSP_AWS_SECRET_ACCESS_KEY'),
                 region_name=os.environ.get('REGION_NAME')
             )
             cls._instance = instance
-            
+
         return cls._instance
 
     def upload_image(self, file, bucket, object_name):
@@ -35,7 +37,6 @@ class S3ClientSingleton:
         except Exception as e:
             print(f"Error uploading image: {e}")
             return False
-        
 
     def upload_image_from_folder(self, file_path, bucket, object_name):
         """
@@ -60,8 +61,7 @@ class S3ClientSingleton:
         except Exception as e:
             print(f"Error uploading image: {e}")
             return False
-        
-        
+
     def list_image_names(self, bucket):
         """
         Lists all images in the specified S3 bucket along with their public URLs,
@@ -71,12 +71,12 @@ class S3ClientSingleton:
         """
         images = []
         continuation_token = None
-        
+
         try:
             while True:
                 if continuation_token:
                     response = self.client.list_objects_v2(
-                        Bucket=bucket, 
+                        Bucket=bucket,
                         ContinuationToken=continuation_token
                     )
                 else:
@@ -86,20 +86,46 @@ class S3ClientSingleton:
                     for obj in response['Contents']:
                         image_name = obj['Key']
                         image_url = f"https://{bucket}.s3.{os.environ.get('AWS_REGION_NAME')}.amazonaws.com/{image_name}"
-                        cod_product = image_name.split("-")[0] if '-' in image_name else image_name
-                        images.append({"name": image_name, "cod_prod": cod_product, "url": image_url})
-                
+                        cod_product = image_name.split(
+                            "-")[0] if '-' in image_name else image_name
+                        images.append(
+                            {"name": image_name, "cod_prod": cod_product, "url": image_url})
+
                 if response.get("IsTruncated"):  # There are more objects to retrieve
                     continuation_token = response.get("NextContinuationToken")
                 else:
                     break
-                    
+
             return images
-        
+
         except NoCredentialsError:
             print("Credentials not available")
             return []
-        
+
         except Exception as e:
             print(f"Error listing images: {e}")
             return []
+
+    def upload_to_s3(self, image):
+        bucket = os.environ.get("AWS_BUCKET_NAME")
+        region = os.environ.get("AWS_REGION_NAME")
+        errors = []
+        key = image.filename
+        data = image.read()
+        
+        try:
+            self.client.put_object(
+                Bucket=bucket,
+                Key=key,
+                Body=data,
+                ContentType=image.content_type
+            )
+            return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
+
+        except Exception as e:
+            errors.append(f"Erro no arquivo {key}: {e}")
+            
+            return {
+                "error": "Nenhuma imagem foi enviada com sucesso",
+                "details": errors
+            }

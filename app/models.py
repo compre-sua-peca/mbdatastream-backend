@@ -110,6 +110,13 @@ class User(db.Model):
             "email": self.email
         }
 
+class SellerUsers(db.Model):
+    __tablename__ = 'seller_users'
+    id_seller = db.Column(db.Integer, db.ForeignKey('seller.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+    id_user = db.Column(db.Integer, db.ForeignKey('user.id', onupdate="CASCADE", ondelete="CASCADE"), primary_key=True)
+
+    seller = db.relationship("Seller", backref="user_seller")
+    user = db.relationship("User", backref="user_seller")
 
 class Seller(db.Model):
     id = db.Column(db.Integer, primary_key=True)
