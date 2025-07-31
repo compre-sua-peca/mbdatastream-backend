@@ -1,10 +1,12 @@
+from math import ceil
 from flask import Blueprint, jsonify, request
+from sqlalchemy import func
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from app.extensions import db
 from app.middleware.api_token import require_api_key
 from app.models import User, SellerUsers
-from app.utils.functions import serialize_users
+from app.utils.functions import serialize_meta_pagination, serialize_users
 
 
 auth_bp = Blueprint("authentication", __name__)
@@ -92,16 +94,36 @@ def protected():
 @auth_bp.route("/get-seller-users/<string:id_seller>", methods=["GET"])
 @require_api_key
 def get_seller_users(id_seller):    
-    if not id_seller:
-        return jsonify({"error": "Query parameter 'id_seller' (integer) is required."}), 400
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
     
-    user_rows = (
+    if not id_seller:
+        return jsonify({"message": "Query parameter 'id_seller' (integer) is required."}), 400
+    
+    query = (
         db.session.query(User)
             .join(SellerUsers, SellerUsers.id_user == User.id)
             .filter(SellerUsers.id_seller == id_seller)
-            .all()
     )
     
-    serialized_seller_users = serialize_users(user_rows)
+    total = db.session.query(func.count()).select_from(
+        query.subquery()
+    ).scalar()
     
-    return jsonify(serialized_seller_users) 
+    offset = (page - 1) * per_page
+    user_rows = query.offset(offset).limit(per_page).all()
+    
+    items = serialize_users(user_rows)
+    total_pages = ceil(total / per_page) if total else 0
+    
+    meta = serialize_meta_pagination(
+        total=total,
+        pages=total_pages,
+        page=page,
+        per_page=per_page
+    )
+    
+    return jsonify({
+        "meta": meta,
+        "users": items
+    })
