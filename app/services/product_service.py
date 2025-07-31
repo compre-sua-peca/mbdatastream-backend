@@ -60,9 +60,14 @@ async def _process_excel_async(file_path, batch_size):
 
         # Check if all required columns exist
         required_columns = [
-            "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "CROSS_REF",
-            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND", "ID_SELLER"
+            "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "ID_SELLER", 
+            "BAR_CODE", "GEAR_QUANTITY"
         ]
+        
+        # required_columns = [
+        #     "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "CROSS_REF",
+        #     "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND", "ID_SELLER"
+        # ]
 
         # Convert column names to uppercase
         df.columns = [col.upper() for col in df.columns]
@@ -173,7 +178,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
     """Process a single row from the Excel file"""
     try:
         id_seller = row.get("ID_SELLER", "")
-        
+
         # Get category
         category_name = row.get("CATEGORY", "")
         category_hash = await get_or_create_category(
@@ -182,7 +187,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             created_categories,
             results
         )
-        
+
         await get_or_create_seller_category(session, id_seller, category_hash, results)
 
         cod_product = await get_or_create_product(session, row, category_hash, results)
@@ -190,7 +195,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
         images = row.get("IMAGES", "")
         if images:
             image_list = images.split("|")
-            
+
             await create_image(session, cod_product, image_list, results)
 
             await session.commit()
@@ -203,6 +208,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
         vehicle_brands_string = row.get("VEHICLE_BRAND", "")
 
         # Extract the values from the strings to lists
+
         names = extract_compat_to_list(vehicles_names_string)
         starts = extract_compat_to_list(start_year_string)
         ends = extract_compat_to_list(end_year_string)
@@ -234,9 +240,9 @@ async def process_row(index, row, session, created_categories, created_vehicles,
                 hash_brand = await get_or_create_vehicle_brand(
                     session, brand, created_brands, results
                 )
-                
+
                 await get_or_create_seller_brand(session, id_seller, hash_brand, results)
-                
+
                 vehicle_name = await get_or_create_vehicle(
                     session,
                     name,
@@ -247,13 +253,13 @@ async def process_row(index, row, session, created_categories, created_vehicles,
                     created_vehicles,
                     results
                 )
-                
+
                 await get_or_create_seller_vehicles(session, id_seller, vehicle_name, results)
 
             # now it’s safe to commit/flush or do another query
             await get_or_create_compatibility(
                 session, cod_product, name, results
-            )     
+            )
 
     except Exception as e:
         results["errors"].append(f"Error on row {index + 2}: {str(e)}")
@@ -329,8 +335,10 @@ async def get_or_create_product(session, row, category_hash, results) -> str:
             gear_quantity = None
 
     # Outros campos simples (se vierem NaN, colocamos None)
-    gear_dimensions = None if pd.isna(row.get("GEAR_DIMENSIONS", None)) else row.get("GEAR_DIMENSIONS")
-    cross_reference = None if pd.isna(row.get("CROSS_REF", None)) else row.get("CROSS_REF")
+    gear_dimensions = None if pd.isna(
+        row.get("GEAR_DIMENSIONS", None)) else row.get("GEAR_DIMENSIONS")
+    cross_reference = None if pd.isna(
+        row.get("CROSS_REF", None)) else row.get("CROSS_REF")
     cod_product = str(row["COD_PRODUCT"]).strip()
     id_seller = row["ID_SELLER"]
 
@@ -438,7 +446,7 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
     """Get an existing vehicle or create a new one"""
 
     treated_vehicle_name = vehicle_name.upper()
-    
+
     # Check if already processed
     if treated_vehicle_name in created_vehicles:
         return treated_vehicle_name
@@ -466,21 +474,21 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
         )
         session.add(new_vehicle)
         results["vehicles_created"] += 1
-        
+
         created_vehicles[treated_vehicle_name] = True
 
         return treated_vehicle_name
-    
+
     else:
-        
+
         return treated_vehicle_name
 
 
 async def get_or_create_compatibility(session, product_code, vehicle_name, results):
     """Create a compatibility if it doesn't exist"""
-    
+
     treated_vehicle_name = vehicle_name.upper()
-    
+
     # Check if compatibility exists
     stmt = select(Compatibility).where(
         Compatibility.cod_product == product_code,
@@ -500,7 +508,7 @@ async def get_or_create_compatibility(session, product_code, vehicle_name, resul
 
 async def get_or_create_seller_category(session, id_seller, hash_category, results):
     """Get an existing seller category relationship or create a new one"""
-    
+
     # Check database
     stmt = select(SellerCategories).where(
         SellerCategories.id_seller == id_seller,
@@ -508,7 +516,7 @@ async def get_or_create_seller_category(session, id_seller, hash_category, resul
     )
     result = await session.execute(stmt)
     existing_seller_brand = result.scalars().first()
-    
+
     if not existing_seller_brand:
         new_seller_category = SellerCategories(
             hash_category=hash_category,
@@ -516,16 +524,16 @@ async def get_or_create_seller_category(session, id_seller, hash_category, resul
         )
         session.add(new_seller_category)
         results["seller_categories_created"] += 1
-        
+
         return new_seller_category
-    
+
     else:
         return
-    
-    
+
+
 async def get_or_create_seller_brand(session, id_seller, hash_brand, results):
     """Get an existing seller brand relationship or create a new one"""
-    
+
     # Check database
     stmt = select(SellerBrands).where(
         SellerBrands.id_seller == id_seller,
@@ -533,7 +541,7 @@ async def get_or_create_seller_brand(session, id_seller, hash_brand, results):
     )
     result = await session.execute(stmt)
     existing_seller_brand = result.scalars().first()
-    
+
     if not existing_seller_brand:
         new_seller_brand = SellerBrands(
             hash_brand=hash_brand,
@@ -541,16 +549,16 @@ async def get_or_create_seller_brand(session, id_seller, hash_brand, results):
         )
         session.add(new_seller_brand)
         results["seller_brands_created"] += 1
-        
+
         return new_seller_brand
-    
+
     else:
         return
 
 
 async def get_or_create_seller_vehicles(session, id_seller, vehicle_name, results):
     """Get an existing seller vehicle relationship or create a new one"""
-    
+
     # Check database
     stmt = select(SellerVehicles).where(
         SellerVehicles.id_seller == id_seller,
@@ -558,7 +566,7 @@ async def get_or_create_seller_vehicles(session, id_seller, vehicle_name, result
     )
     result = await session.execute(stmt)
     existing_seller_category = result.scalars().first()
-    
+
     if not existing_seller_category:
         new_seller_category = SellerVehicles(
             id_seller=id_seller,
@@ -566,7 +574,7 @@ async def get_or_create_seller_vehicles(session, id_seller, vehicle_name, result
         )
         session.add(new_seller_category)
         results["seller_vehicles_created"] += 1
-        
+
         return new_seller_category
 
     else:
@@ -591,7 +599,8 @@ async def create_image(
     await session.flush()
 
     # 2) Busca todos os id_image que já existem no banco para este produto:
-    stmt = select(Images.id_image).where(Images.id_image.like(f"{cod_product}%"))
+    stmt = select(Images.id_image).where(
+        Images.id_image.like(f"{cod_product}%"))
     result = await session.execute(stmt)
     raw_existing = result.scalars().all()
     # Exemplo de raw_existing: ["2110655", "2110655-1", "2110655-2", ...]
@@ -625,7 +634,7 @@ async def create_image(
     # 4) Agora percorremos cada URL e tentamos inserir
     for url in urls:
         treated_url = url.strip()
-        
+
         # Recalcular new_id com o next_suffix corrente
         new_id = f"{cod_product}-{next_suffix}"
 
@@ -639,7 +648,8 @@ async def create_image(
             continue
 
         # 4.2) Caso não exista, criamos e adicionamos
-        image = Images(cod_product=cod_product, id_image=new_id, url=treated_url)
+        image = Images(cod_product=cod_product,
+                       id_image=new_id, url=treated_url)
         session.add(image)
         results["images_created"] = results.get("images_created", 0) + 1
 
