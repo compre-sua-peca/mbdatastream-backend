@@ -178,7 +178,8 @@ def serialize_one_seller(seller):
     result = {
         "id": seller.id,
         "name": seller.name,
-        "cnpj": seller.cnpj
+        "cnpj": seller.cnpj,
+        "seller_domain": seller.seller_domain
     }
     
     return result
