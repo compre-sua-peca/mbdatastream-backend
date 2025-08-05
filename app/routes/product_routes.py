@@ -94,8 +94,6 @@ def get_products_by_category(hash_category):
 
     pagination = None
 
-    print(id_seller)
-
     if not hash_category:
         return jsonify({"message": "Nenhuma categoria fornecida"}), 400
 
@@ -523,24 +521,23 @@ def get_product(cod_product):
 @require_api_key
 def update_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
-
     if not product:
         return jsonify({"message": "Produto não encontrado"}), 404
 
-    data = request.json()
+    data = request.get_json() or {}
 
-    product.name_product = data.get("name_product", product.name_product)
-    product.bar_code = data.get("bar_code", product.bar_code)
-    product.gear_quantity = data.get("gear_quantity", product.gear_quantity)
-    product.gear_dimensions = data.get(
-        "gear_dimensions", product.gear_dimensions)
-    product.cross_reference = data.get(
-        "cross_reference", product.cross_reference)
-    product.hash_category = data.get("hash_category", product.hash_category)
+    product.name_product    = data.get("name_product",    product.name_product)
+    product.description     = data.get("description",     product.description)
+    product.is_manufactured = data.get("is_manufactured", product.is_manufactured)
+    product.bar_code        = data.get("bar_code",        product.bar_code)
+    product.gear_quantity   = data.get("gear_quantity",   product.gear_quantity)
+    product.gear_dimensions = data.get("gear_dimensions", product.gear_dimensions)
+    product.cross_reference = data.get("cross_reference", product.cross_reference)
+    product.hash_category   = data.get("hash_category",   product.hash_category)
 
     db.session.commit()
-
     return jsonify({"message": "Produto atualizado com sucesso"}), 200
+
 
 
 @product_bp.route("/upload-product-images-by-folder", methods=["POST"])
@@ -681,7 +678,7 @@ def delete_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
 
     if not product:
-        return jsonify({"message": "Produto não encontrado"}), 400
+        return jsonify({"message": "Produto não encontrado"}), 404
 
     try:
         # Delete all related Images
@@ -691,17 +688,17 @@ def delete_product(cod_product):
         # Delete all related Compatibility records
         for comp in product.compatibilities:
             db.session.delete(comp)
-
+            
         # Delete the product itself
         db.session.delete(product)
-
         # Commit all deletions
         db.session.commit()
 
+        return jsonify({"message": "Produto deletado com sucesso"}), 200
+
     except Exception as e:
         db.session.rollback()
-
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        return jsonify({"error": f"Ocorreu um erro: {str(e)}"}), 500
 
 
 @product_bp.route("/seller/<int:id_seller>", methods=["DELETE"])
