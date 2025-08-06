@@ -29,7 +29,7 @@ class Product(db.Model):
         'seller.id', onupdate="CASCADE", ondelete="CASCADE"
     ), nullable=True)
 
-    images = db.relationship('Images', backref='product', lazy=True)
+    images = db.relationship('Images', backref='product', lazy=True, cascade="all" )
     compatibilities = db.relationship(
         'Compatibility', backref='product', lazy=True)
 
