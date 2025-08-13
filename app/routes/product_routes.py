@@ -406,8 +406,41 @@ def create_product():
     return jsonify({"message": "Produto criado com sucesso"}), 201
 
 
-@product_bp.route("/create-from-csv", methods=["POST"])
+@product_bp.route("/create-from-csv/<string:id_seller>", methods=["POST"])
 def create_products_from_csv():
+    if 'file' not in request.files:
+        return jsonify({"message": "Nenhum arquivo enviado"}), 400
+    
+    file = request.files['file']
+
+    if file.filename == '':
+        return jsonify({"message": "Nenhum arquivo selecionado"}), 400
+
+    if not file.filename.endswith('.xlsx'):
+        return jsonify({"message": "Arquivo inválido"}), 400
+
+    # Create a temporary file
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as temp:
+        file.save(temp.name)
+        temp_path = temp.name
+
+    try:
+        products = process_excel(temp_path)
+
+        return jsonify({
+            "message": "Produtos criados com sucesso",
+            "data": products
+        }), 201
+
+    finally:
+        # Always ensure the temporary file is removed
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+
+@product_bp.route("/create-products-from-csv/<int:id_seller>", methods=["POST"])
+def create_products_from_csv_front(id_seller: int):
+    
     if 'file' not in request.files:
         return jsonify({"message": "Nenhum arquivo enviado"}), 400
 
@@ -425,7 +458,7 @@ def create_products_from_csv():
         temp_path = temp.name
 
     try:
-        products = process_excel(temp_path)
+        products = process_excel(temp_path, id_seller)
 
         return jsonify({
             "message": "Produtos criados com sucesso",

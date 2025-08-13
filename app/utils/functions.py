@@ -40,15 +40,18 @@ def extract_compat_to_list(compat_str: str) -> list[str]:
 # Asynchronous processing function to process the product insertion in batches after reading the Excel
 
 
-async def _process_excel_async(file_path, batch_size):
+async def _process_excel_async(file_path, batch_size, id_seller):
     try:
         # Read the Excel file
+        if not id_seller:
+            return {"error": "ID do vendedor não fornecido"}
+        
         df = pd.read_excel(file_path)
 
         # Check if all required columns exist
         required_columns = [
             "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "CROSS_REF",
-            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND", "ID_SELLER"
+            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND"
         ]
 
         # Convert column names to uppercase
@@ -96,7 +99,8 @@ async def _process_excel_async(file_path, batch_size):
                 created_categories,
                 created_vehicles,
                 created_brands,
-                results
+                results,
+                id_seller
             )
 
         return {
@@ -113,7 +117,7 @@ async def _process_excel_async(file_path, batch_size):
 # Function to start the process of batches to insert into the database
 
 
-async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, created_brands, results):
+async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, created_brands, results, id_seller):
     """
     Processa cada linha em batch_df, abrindo um AsyncSession por linha.
     Se process_row não lançar exceção, dá commit; senão, dá rollback e registra erro.
@@ -133,7 +137,8 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
                         created_categories,
                         created_vehicles,
                         created_brands,
-                        results
+                        results,
+                        id_seller
                     )
                     # 3) Se não houve erro, commit desta transação
                     await session.commit()
@@ -154,8 +159,11 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
 
 
 # Function to check the existence of the data and then register each row on the database
-async def process_row(index, row, session, created_categories, created_vehicles, created_brands, results):
+async def process_row(index, row, session, created_categories, created_vehicles, created_brands, results, id_seller):
     """Process a single row from the Excel file"""
+    if not id_seller:
+            return {"error": "ID do vendedor não fornecido"}
+        
     try:
         # Get category
         category_name = row.get("CATEGORY", "")
@@ -166,7 +174,7 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             results
         )
 
-        cod_product = await get_or_create_product(session, row, category_hash, results)
+        cod_product = await get_or_create_product(session, row, category_hash, results, id_seller)
 
         images = row.get("IMAGES", "")
         if images:
@@ -265,7 +273,7 @@ async def get_or_create_vehicle_brand(session, brand_name, created_brands, resul
     return brand_hash
 
 
-async def get_or_create_product(session, row, category_hash, results) -> str:
+async def get_or_create_product(session, row, category_hash, results, id_seller) -> str:
     """
     Verifica se já existe um Product.cod_product no banco. Se não existir,
     faz todos os checks de validação (nome, código de barras, quantidades, etc.),
@@ -274,6 +282,10 @@ async def get_or_create_product(session, row, category_hash, results) -> str:
     """
 
     # Extrair e validar campos do row
+    
+    if not id_seller:
+        raise ValueError("ID do vendedor não fornecido")
+    
     name_product = row["NAME_PRODUCT"]
     name_check = name_product.split("-")[0].strip()
     is_manufactured = True
@@ -308,8 +320,6 @@ async def get_or_create_product(session, row, category_hash, results) -> str:
     gear_dimensions = None if pd.isna(row.get("GEAR_DIMENSIONS", None)) else row.get("GEAR_DIMENSIONS")
     cross_reference = None if pd.isna(row.get("CROSS_REF", None)) else row.get("CROSS_REF")
     cod_product = str(row["COD_PRODUCT"]).strip()
-    id_seller = row["ID_SELLER"]
-
     # Montar o dicionário que será passado ao construtor de Product
     product_dict = {
         "cod_product": cod_product,
@@ -545,7 +555,7 @@ async def create_image(
 
 
 # Synchronous wrapper function to handle the batch loop
-def process_excel(file_path, batch_size=100):
+def process_excel(file_path, id_seller, batch_size=100):
     """
     Synchronous wrapper for asynchronous processing function.
     This is what you'll call from your Flask routes.
@@ -553,7 +563,7 @@ def process_excel(file_path, batch_size=100):
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
-        return loop.run_until_complete(_process_excel_async(file_path, batch_size))
+        return loop.run_until_complete(_process_excel_async(file_path, batch_size, id_seller))
     finally:
         loop.close()
 

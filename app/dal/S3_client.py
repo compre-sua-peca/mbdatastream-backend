@@ -118,7 +118,6 @@ class S3ClientSingleton:
                 Bucket=bucket,
                 Key=key,
                 Body=data,
-                ContentType=image.content_type
             )
             return f"https://{bucket}.s3.{region}.amazonaws.com/{key}"
 
