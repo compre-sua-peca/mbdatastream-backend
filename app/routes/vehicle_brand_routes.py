@@ -2,6 +2,7 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 from app.dal.S3_client import S3ClientSingleton
 from app.dal.encryptor import HashGenerator
+from app.middleware.api_token import require_api_key
 from app.models import VehicleBrand, SellerBrands
 from app.extensions import db
 from app.utils.functions import serialize_brand, serialize_meta_pagination
@@ -14,6 +15,7 @@ vehicle_brand_bp = Blueprint("vehicle_brands", __name__)
 
 
 @vehicle_brand_bp.route("/all", methods=["GET"])
+@require_api_key
 def get_all_vehicle_brands():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -43,6 +45,7 @@ def get_all_vehicle_brands():
 
 
 @vehicle_brand_bp.route("/<string:hash_brand>")
+@require_api_key
 def get_vehicle_brand(hash_brand):
     vehicle_brand = VehicleBrand.query.filter_by(hash_brand=hash_brand).first()
 
@@ -59,6 +62,7 @@ def get_vehicle_brand(hash_brand):
 
 
 @vehicle_brand_bp.route("/", methods=["POST"])
+@require_api_key
 def create_vehicle_brand():
     # The request is expected to be multipart/form-data.
     # Text fields are in request.form and files are in request.files.
@@ -145,6 +149,7 @@ def create_vehicle_brand():
 
 # Create seller vehicle brands relationships
 @vehicle_brand_bp.route("/create-seller-brands", methods=["POST"])
+@require_api_key
 def add_seller_brands():
     brand_name = request.args.get("brand_name")
     id_seller = request.args.get("id_seller", type=int)
@@ -182,6 +187,7 @@ def add_seller_brands():
 
 
 @vehicle_brand_bp.route("/create-multiple-seller-brands", methods=["POST"])
+@require_api_key
 def add_multiple_seller_brands():
     id_seller = request.args.get("id_seller", type=int)
     brand_names = request.json.get(
@@ -226,6 +232,7 @@ def add_multiple_seller_brands():
 
 
 @vehicle_brand_bp.route("/<string:hash_brand>", methods=["DELETE"])
+@require_api_key
 def delete_vehicle_brand(hash_brand):
     vehicle_brand = VehicleBrand.query.filter_by(hash_brand).first()
 

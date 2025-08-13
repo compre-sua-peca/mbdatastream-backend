@@ -1,5 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app.dal.encryptor import HashGenerator
+from app.middleware.api_token import require_api_key
 from app.models import Category, SellerCategories
 from app.utils.functions import serialize_category
 from app.extensions import db
@@ -11,6 +12,7 @@ category_bp = Blueprint("categories", __name__)
 
 
 @category_bp.route("/all", methods=["GET"])
+@require_api_key
 def get_all_categories():
     # Read and validate the id_seller parameter
     id_seller = request.args.get("id_seller", type=int)
@@ -42,6 +44,7 @@ def get_all_categories():
 
 # Create a new category
 @category_bp.route("/", methods=["POST"])
+@require_api_key
 def create_category():
     data = request.get_json()
     id_seller = request.args.get("id_seller", type=int)
@@ -87,6 +90,7 @@ def create_category():
 
 
 @category_bp.route("/create-multiple-seller-categories", methods=["POST"])
+@require_api_key
 def create_seller_categories():
     id_seller = request.args.get("id_seller", type=int)
     categories = request.json.get("category_names")
@@ -137,6 +141,7 @@ def create_seller_categories():
 
 # Retrieve a single category by its hash_category
 @category_bp.route("/<string:hash_category>", methods=["GET"])
+@require_api_key
 def get_category(hash_category):
     category = Category.query.filter_by(hash_category=hash_category).first()
     if not category:
@@ -151,6 +156,7 @@ def get_category(hash_category):
 
 # Update an existing category
 @category_bp.route("/<string:hash_category>", methods=["PUT"])
+@require_api_key
 def update_category(hash_category):
     category = Category.query.filter_by(hash_category=hash_category).first()
     if not category:
@@ -165,6 +171,7 @@ def update_category(hash_category):
 
 # Remove a category
 @category_bp.route("/<string:hash_category>", methods=["DELETE"])
+@require_api_key
 def delete_category(hash_category):
     category = Category.query.filter_by(hash_category=hash_category).first()
     if not category:

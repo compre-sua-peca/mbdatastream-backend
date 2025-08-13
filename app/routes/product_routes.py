@@ -2,20 +2,21 @@ import json
 import math
 from flask import Blueprint, jsonify, request
 from sqlalchemy import text, or_
-from app.models import Product, Images, Category, Compatibility, Vehicle, VehicleBrand, Seller, SellerBrands, SellerVehicles, SellerCategories
+from app.models import Product, Images, Category, Compatibility, Vehicle, SellerBrands, SellerVehicles, SellerCategories
+from app.middleware.api_token import require_api_key
 from app.extensions import db
-from app.utils.functions import process_excel
+from app.services.product_service import process_excel
 import tempfile
 import os
 from app.dal.S3_client import S3ClientSingleton
 from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_products, serialize_meta_pagination
-from app.dal.encryptor import HashGenerator
 
 
 product_bp = Blueprint("products", __name__)
 
 
 @product_bp.route("/all", methods=["GET"])
+@require_api_key
 def get_products():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -38,7 +39,47 @@ def get_products():
     }), 200
 
 
+@product_bp.route("/get-all-by-seller/<string:id_seller>", methods=["GET"])
+@require_api_key
+def get_products_by_seller(id_seller):
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 16, type=int)
+    is_manufactured_str = request.args.get("is_manufactured")
+
+    is_manufactured = None
+    if is_manufactured_str is not None:
+        is_manufactured = is_manufactured_str.lower() == "true"
+
+    pagination = None
+
+    if is_manufactured is None:
+        pagination = Product.query.filter(
+            Product.id_seller == id_seller
+        ).paginate(page=page, per_page=per_page, error_out=False)
+
+    else:
+        pagination = Product.query.filter(
+            Product.is_manufactured == is_manufactured,
+            Product.id_seller == id_seller
+        ).paginate(page=page, per_page=per_page, error_out=False)
+
+    filtered_products = serialize_products(pagination.items)
+
+    meta = serialize_meta_pagination(
+        pagination.total,
+        pagination.pages,
+        pagination.page,
+        pagination.per_page
+    )
+
+    return jsonify({
+        "products": filtered_products,
+        "meta": meta
+    }), 200
+
+
 @product_bp.route("/category/<string:hash_category>", methods=["GET"])
+@require_api_key
 def get_products_by_category(hash_category):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -52,8 +93,6 @@ def get_products_by_category(hash_category):
     transformed_hash_category = hash_category.replace("|", "/")
 
     pagination = None
-
-    print(id_seller)
 
     if not hash_category:
         return jsonify({"message": "Nenhuma categoria fornecida"}), 400
@@ -93,6 +132,7 @@ def get_products_by_category(hash_category):
 
 
 @product_bp.route("/search/<string:search_term>", methods=["GET"])
+@require_api_key
 def search_product(search_term):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -149,6 +189,7 @@ def search_product(search_term):
 
 
 @product_bp.route("/compatibility/<string:vehicle_name>", methods=["GET"])
+@require_api_key
 def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
@@ -287,6 +328,7 @@ def get_by_compatibility(vehicle_name):
 
 
 @product_bp.route("/compatibility-all/<string:vehicle_name>", methods=["GET"])
+@require_api_key
 def get_all_by_compatibility(vehicle_name):
     if not vehicle_name:
         return jsonify({"message": "Nenhuma compatibilidade informada"}), 400
@@ -385,6 +427,7 @@ def get_all_by_compatibility(vehicle_name):
 
 
 @product_bp.route("/", methods=["POST"])
+@require_api_key
 def create_product():
     data = request.json
 
@@ -393,10 +436,12 @@ def create_product():
         cod_product=data["cod_product"],
         name_product=data["name_product"],
         bar_code=data["bar_code"],
+        description=data["description"],
         gear_quantity=data["gear_quantity"],
         gear_dimensions=data["gear_dimensions"],
         cross_reference=data["cross_reference"],
-        hash_category=data["hash_category"]
+        hash_category=data["hash_category"],
+        id_seller=data.get("id_seller")
         # hash_brand=data["hash_brand"]
     )
 
@@ -406,6 +451,8 @@ def create_product():
     return jsonify({"message": "Produto criado com sucesso"}), 201
 
 
+@product_bp.route("/create-from-csv", methods=["POST"])
+@require_api_key
 @product_bp.route("/create-from-csv/<string:id_seller>", methods=["POST"])
 def create_products_from_csv():
     if 'file' not in request.files:
@@ -472,6 +519,7 @@ def create_products_from_csv_front(id_seller: int):
 
 
 @product_bp.route("/<string:cod_product>", methods=["GET"])
+@require_api_key
 def get_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
 
@@ -504,29 +552,30 @@ def get_product(cod_product):
 
 
 @product_bp.route("/<string:cod_product>", methods=["PUT"])
+@require_api_key
 def update_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
-
     if not product:
         return jsonify({"message": "Produto não encontrado"}), 404
 
-    data = request.json()
+    data = request.get_json() or {}
 
-    product.name_product = data.get("name_product", product.name_product)
-    product.bar_code = data.get("bar_code", product.bar_code)
-    product.gear_quantity = data.get("gear_quantity", product.gear_quantity)
-    product.gear_dimensions = data.get(
-        "gear_dimensions", product.gear_dimensions)
-    product.cross_reference = data.get(
-        "cross_reference", product.cross_reference)
-    product.hash_category = data.get("hash_category", product.hash_category)
+    product.name_product    = data.get("name_product",    product.name_product)
+    product.description     = data.get("description",     product.description)
+    product.is_manufactured = data.get("is_manufactured", product.is_manufactured)
+    product.bar_code        = data.get("bar_code",        product.bar_code)
+    product.gear_quantity   = data.get("gear_quantity",   product.gear_quantity)
+    product.gear_dimensions = data.get("gear_dimensions", product.gear_dimensions)
+    product.cross_reference = data.get("cross_reference", product.cross_reference)
+    product.hash_category   = data.get("hash_category",   product.hash_category)
 
     db.session.commit()
-
     return jsonify({"message": "Produto atualizado com sucesso"}), 200
 
 
+
 @product_bp.route("/upload-product-images-by-folder", methods=["POST"])
+@require_api_key
 def upload_product_images_by_folder():
     s3_client = S3ClientSingleton()
 
@@ -592,6 +641,7 @@ def upload_product_images_by_folder():
 
 
 @product_bp.route("/upload-product-images-by-s3", methods=["POST"])
+@require_api_key
 def upload_product_images_by_s3():
     s3_client = S3ClientSingleton()
 
@@ -657,11 +707,12 @@ def upload_product_images_by_s3():
 
 
 @product_bp.route("/<string:cod_product>", methods=["DELETE"])
+@require_api_key
 def delete_product(cod_product):
     product = Product.query.filter_by(cod_product=cod_product).first()
 
     if not product:
-        return jsonify({"message": "Produto não encontrado"}), 400
+        return jsonify({"message": "Produto não encontrado"}), 404
 
     try:
         # Delete all related Images
@@ -671,20 +722,21 @@ def delete_product(cod_product):
         # Delete all related Compatibility records
         for comp in product.compatibilities:
             db.session.delete(comp)
-
+            
         # Delete the product itself
         db.session.delete(product)
-
         # Commit all deletions
         db.session.commit()
 
+        return jsonify({"message": "Produto deletado com sucesso"}), 200
+
     except Exception as e:
         db.session.rollback()
-
-        return jsonify({"error": f"An error occurred: {str(e)}"}), 500
+        return jsonify({"error": f"Ocorreu um erro: {str(e)}"}), 500
 
 
 @product_bp.route("/seller/<int:id_seller>", methods=["DELETE"])
+@require_api_key
 def delete_products_by_seller(id_seller):
     # Search all products by seller
     products = Product.query.filter_by(id_seller=id_seller).all()
@@ -727,6 +779,7 @@ def delete_products_by_seller(id_seller):
 
 
 @product_bp.route("/sync-images", methods=["PATCH"])
+@require_api_key
 def sync_images():
     s3_client = S3ClientSingleton()
 
@@ -845,7 +898,7 @@ def create_product_and_compatibilty():
 
     id_seller = request.args.get("id_seller", type=int)
     compatibilities_array = request.form.get("compatibilities")
-    compatibilities = json.loads(compatibilities_array)
+    compatibilities = json.loads(compatibilities_array) if compatibilities_array else []
 
     try:
         if not Product.query.get(cod_product):
@@ -898,7 +951,6 @@ def create_product_and_compatibilty():
         s3 = S3ClientSingleton()
         
         urls = []
-        
         for img in images:
             url = s3.upload_to_s3(image=img)
 
@@ -940,3 +992,4 @@ def create_product_and_compatibilty():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Erro ao popular o banco: {e}"}), 400
+    

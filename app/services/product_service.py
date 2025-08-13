@@ -1,8 +1,9 @@
 import asyncio
-
-from flask import json
-from app.models import Images
+from itertools import zip_longest
+import re
+import pandas as pd
 from app.extensions import db
+from app.models import Category, Images, Product, Vehicle, Compatibility, VehicleBrand, SellerBrands, SellerCategories, SellerVehicles
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
@@ -36,21 +37,31 @@ def extract_compat_to_list(compat_str: str) -> list[str]:
     # 4) strip whitespace and drop blank entries
     return [p.strip() for p in parts if p.strip()]
 
+
+# Synchronous wrapper function to handle the batch loop
+def process_excel(file_path, batch_size=100):
+    """
+    Synchronous wrapper for asynchronous processing function.
+    This is what you'll call from your Flask routes.
+    """
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(_process_excel_async(file_path, batch_size))
+    finally:
+        loop.close()
+
+
 # Asynchronous processing function to process the product insertion in batches after reading the Excel
-
-
-async def _process_excel_async(file_path, batch_size, id_seller):
+async def _process_excel_async(file_path, batch_size):
     try:
         # Read the Excel file
-        if not id_seller:
-            return {"error": "ID do vendedor não fornecido"}
-        
         df = pd.read_excel(file_path)
 
         # Check if all required columns exist
         required_columns = [
             "COD_PRODUCT", "NAME_PRODUCT", "CATEGORY", "CROSS_REF",
-            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND"
+            "GEAR_QUANTITY", "GEAR_DIMENSIONS", "BAR_CODE", "VEHICLE_BRAND", "ID_SELLER"
         ]
 
         # Convert column names to uppercase
@@ -73,6 +84,9 @@ async def _process_excel_async(file_path, batch_size, id_seller):
             "brands_created": 0,
             "compatibilities_created": 0,
             "images_created": 0,
+            "seller_categories_created": 0,
+            "seller_vehicles_created": 0,
+            "seller_brands_created": 0,
             "errors": []
         }
 
@@ -98,8 +112,7 @@ async def _process_excel_async(file_path, batch_size, id_seller):
                 created_categories,
                 created_vehicles,
                 created_brands,
-                results,
-                id_seller
+                results
             )
 
         return {
@@ -116,7 +129,7 @@ async def _process_excel_async(file_path, batch_size, id_seller):
 # Function to start the process of batches to insert into the database
 
 
-async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, created_brands, results, id_seller):
+async def process_batch(batch_df, batch_idx, created_categories, created_vehicles, created_brands, results):
     """
     Processa cada linha em batch_df, abrindo um AsyncSession por linha.
     Se process_row não lançar exceção, dá commit; senão, dá rollback e registra erro.
@@ -136,8 +149,7 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
                         created_categories,
                         created_vehicles,
                         created_brands,
-                        results,
-                        id_seller
+                        results
                     )
                     # 3) Se não houve erro, commit desta transação
                     await session.commit()
@@ -156,14 +168,12 @@ async def process_batch(batch_df, batch_idx, created_categories, created_vehicle
             continue
 
 
-
 # Function to check the existence of the data and then register each row on the database
-async def process_row(index, row, session, created_categories, created_vehicles, created_brands, results, id_seller):
+async def process_row(index, row, session, created_categories, created_vehicles, created_brands, results):
     """Process a single row from the Excel file"""
-    if not id_seller:
-            return {"error": "ID do vendedor não fornecido"}
-        
     try:
+        id_seller = row.get("ID_SELLER", "")
+        
         # Get category
         category_name = row.get("CATEGORY", "")
         category_hash = await get_or_create_category(
@@ -172,8 +182,10 @@ async def process_row(index, row, session, created_categories, created_vehicles,
             created_categories,
             results
         )
+        
+        await get_or_create_seller_category(session, id_seller, category_hash, results)
 
-        cod_product = await get_or_create_product(session, row, category_hash, results, id_seller)
+        cod_product = await get_or_create_product(session, row, category_hash, results)
 
         images = row.get("IMAGES", "")
         if images:
@@ -219,24 +231,29 @@ async def process_row(index, row, session, created_categories, created_vehicles,
 
             # wrap in no_autoflush to avoid the Query-invoked autoflush error
             with session.no_autoflush:
-                brand_hash = await get_or_create_vehicle_brand(
+                hash_brand = await get_or_create_vehicle_brand(
                     session, brand, created_brands, results
                 )
-                await get_or_create_vehicle(
+                
+                await get_or_create_seller_brand(session, id_seller, hash_brand, results)
+                
+                vehicle_name = await get_or_create_vehicle(
                     session,
                     name,
                     start,
                     end,
                     vtype.strip() if vtype else None,
-                    brand_hash,
+                    hash_brand,
                     created_vehicles,
                     results
                 )
+                
+                await get_or_create_seller_vehicles(session, id_seller, vehicle_name, results)
 
             # now it’s safe to commit/flush or do another query
             await get_or_create_compatibility(
                 session, cod_product, name, results
-            )
+            )     
 
     except Exception as e:
         results["errors"].append(f"Error on row {index + 2}: {str(e)}")
@@ -272,7 +289,7 @@ async def get_or_create_vehicle_brand(session, brand_name, created_brands, resul
     return brand_hash
 
 
-async def get_or_create_product(session, row, category_hash, results, id_seller) -> str:
+async def get_or_create_product(session, row, category_hash, results) -> str:
     """
     Verifica se já existe um Product.cod_product no banco. Se não existir,
     faz todos os checks de validação (nome, código de barras, quantidades, etc.),
@@ -281,10 +298,6 @@ async def get_or_create_product(session, row, category_hash, results, id_seller)
     """
 
     # Extrair e validar campos do row
-    
-    if not id_seller:
-        raise ValueError("ID do vendedor não fornecido")
-    
     name_product = row["NAME_PRODUCT"]
     name_check = name_product.split("-")[0].strip()
     is_manufactured = True
@@ -319,6 +332,8 @@ async def get_or_create_product(session, row, category_hash, results, id_seller)
     gear_dimensions = None if pd.isna(row.get("GEAR_DIMENSIONS", None)) else row.get("GEAR_DIMENSIONS")
     cross_reference = None if pd.isna(row.get("CROSS_REF", None)) else row.get("CROSS_REF")
     cod_product = str(row["COD_PRODUCT"]).strip()
+    id_seller = row["ID_SELLER"]
+
     # Montar o dicionário que será passado ao construtor de Product
     product_dict = {
         "cod_product": cod_product,
@@ -421,9 +436,12 @@ async def get_or_create_category(session, raw_name, created_categories, results)
 
 async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, vehicle_type, hash_brand, created_vehicles, results):
     """Get an existing vehicle or create a new one"""
+
+    treated_vehicle_name = vehicle_name.upper()
+    
     # Check if already processed
-    if vehicle_name in created_vehicles:
-        return
+    if treated_vehicle_name in created_vehicles:
+        return treated_vehicle_name
 
     # Check if brand exist
     # brand_check = await session.execute(
@@ -432,8 +450,6 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
     # brand = brand_check.scalars().first()
     # if not brand:
     #     raise ValueError(f"Brand with hash '{hash_brand}' does not exist for vehicle '{vehicle_name}'")
-    
-    treated_vehicle_name = vehicle_name.upper()
 
     # Check database
     stmt = select(Vehicle).where(Vehicle.vehicle_name == treated_vehicle_name)
@@ -450,8 +466,14 @@ async def get_or_create_vehicle(session, vehicle_name, start_year, end_year, veh
         )
         session.add(new_vehicle)
         results["vehicles_created"] += 1
+        
+        created_vehicles[treated_vehicle_name] = True
 
-    created_vehicles[treated_vehicle_name] = True
+        return treated_vehicle_name
+    
+    else:
+        
+        return treated_vehicle_name
 
 
 async def get_or_create_compatibility(session, product_code, vehicle_name, results):
@@ -474,6 +496,81 @@ async def get_or_create_compatibility(session, product_code, vehicle_name, resul
         )
         session.add(compatibility)
         results["compatibilities_created"] += 1
+
+
+async def get_or_create_seller_category(session, id_seller, hash_category, results):
+    """Get an existing seller category relationship or create a new one"""
+    
+    # Check database
+    stmt = select(SellerCategories).where(
+        SellerCategories.id_seller == id_seller,
+        SellerCategories.hash_category == hash_category
+    )
+    result = await session.execute(stmt)
+    existing_seller_brand = result.scalars().first()
+    
+    if not existing_seller_brand:
+        new_seller_category = SellerCategories(
+            hash_category=hash_category,
+            id_seller=id_seller
+        )
+        session.add(new_seller_category)
+        results["seller_categories_created"] += 1
+        
+        return new_seller_category
+    
+    else:
+        return
+    
+    
+async def get_or_create_seller_brand(session, id_seller, hash_brand, results):
+    """Get an existing seller brand relationship or create a new one"""
+    
+    # Check database
+    stmt = select(SellerBrands).where(
+        SellerBrands.id_seller == id_seller,
+        SellerBrands.hash_brand == hash_brand
+    )
+    result = await session.execute(stmt)
+    existing_seller_brand = result.scalars().first()
+    
+    if not existing_seller_brand:
+        new_seller_brand = SellerBrands(
+            hash_brand=hash_brand,
+            id_seller=id_seller
+        )
+        session.add(new_seller_brand)
+        results["seller_brands_created"] += 1
+        
+        return new_seller_brand
+    
+    else:
+        return
+
+
+async def get_or_create_seller_vehicles(session, id_seller, vehicle_name, results):
+    """Get an existing seller vehicle relationship or create a new one"""
+    
+    # Check database
+    stmt = select(SellerVehicles).where(
+        SellerVehicles.id_seller == id_seller,
+        SellerVehicles.vehicle_name == vehicle_name
+    )
+    result = await session.execute(stmt)
+    existing_seller_category = result.scalars().first()
+    
+    if not existing_seller_category:
+        new_seller_category = SellerVehicles(
+            id_seller=id_seller,
+            vehicle_name=vehicle_name
+        )
+        session.add(new_seller_category)
+        results["seller_vehicles_created"] += 1
+        
+        return new_seller_category
+
+    else:
+        return
 
 
 async def create_image(
@@ -551,259 +648,3 @@ async def create_image(
 
     # Atenção: não commitamos aqui. Quem chamou create_image deve chamar `await session.commit()`
     # após processar a linha inteira. Se ocorrer qualquer erro mais adiante, basta fazer rollback.
-
-
-# Synchronous wrapper function to handle the batch loop
-def process_excel(file_path, id_seller, batch_size=100):
-    """
-    Synchronous wrapper for asynchronous processing function.
-    This is what you'll call from your Flask routes.
-    """
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(_process_excel_async(file_path, batch_size, id_seller))
-    finally:
-        loop.close()
-
-
-def is_image_file(filename):
-    valid_extensions = ('.png', '.jpg', '.jpeg', '.webp')
-
-    return filename.lower().endswith(valid_extensions)
-
-
-def extract_existing_product_codes():
-    existing_images = db.session.query(Images.cod_product).filter(
-        Images.cod_product.like("f{filename_no_ext}%")
-    ).all()
-
-    existing_codes = {img.cod_product for img in existing_images}
-
-    if existing_codes:
-        numbers = [int(code.split("+")[-1])
-                   for code in existing_codes if "-" in code]
-        next_num = max(numbers) + 1 if numbers else 1
-
-        return next_num
-    else:
-        next_num = 1
-
-        return next_num
-
-
-""" ----------------------------- Function to handle json from the database ------------------------------ """
-
-
-def serialize_products(products):
-    result = []
-
-    for product in products:
-        # Get related category name if available
-        category_name = product.category.name_category if product.category else None
-
-        # Get list of image URLs
-        image_urls = [image.url for image in product.images]
-
-        # Get list of vehicles this product is compatible with
-        compatibility = []
-        for comp in product.compatibilities:
-            vehicle = comp.vehicle
-
-            # Get vehicle brand using the existing relationship
-            brand_name = None
-            if vehicle:
-                # Use the relationship established by the ORM
-                vehicle_brand = vehicle.vehicle_brand if hasattr(
-                    vehicle, 'vehicle_brand') else None
-                brand_name = vehicle_brand.brand_name if vehicle_brand else None
-
-            vehicle_data = {
-                "vehicle_name": comp.vehicle_name,
-                "vehicle_type": vehicle.vehicle_type if vehicle else None,
-                "start_year": vehicle.start_year if vehicle else None,
-                "end_year": vehicle.end_year if vehicle else None,
-                "brand": brand_name
-            }
-            compatibility.append(vehicle_data)
-
-        result.append({
-            "cod_product": product.cod_product,
-            "name_product": product.name_product,
-            "description": product.description,
-            "is_active": product.is_active,
-            "is_manufactured": product.is_manufactured,
-            "bar_code": product.bar_code,
-            "gear_quantity": product.gear_quantity,
-            "gear_dimensions": product.gear_dimensions,
-            "cross_reference": product.cross_reference,
-            "category": category_name,
-            "images": image_urls,
-            "compatibilities": compatibility
-        })
-
-    return result
-
-
-def serialize_vehicle(vehicles):
-    result = []
-
-    for vehicle in vehicles:
-        result.append({
-            "vehicle_name": vehicle.vehicle_name,
-            "vehicle_type": vehicle.vehicle_type,
-            "start_year": vehicle.start_year,
-            "end_year": vehicle.end_year,
-            "hash_brand": vehicle.hash_brand
-        })
-
-    return result
-
-
-def serialize_brand(brands):
-    result = []
-
-    for brand in brands:
-        result.append({
-            "hash_brand": brand.hash_brand,
-            "brand_name": brand.brand_name,
-            "brand_image": brand.brand_image
-        })
-
-    return result
-
-
-def serialize_category(categories):
-    result = []
-
-    for category in categories:
-        result.append({
-            "hash_category": category.hash_category,
-            "name_category": category.name_category
-        })
-
-    return result
-
-
-def serialize_label(labels):
-    result = []
-    
-    for label in labels:
-        result.append({
-            "name": label.name
-        })
-        
-    return result
-
-
-def serialize_custom_showcase(custom_showcase):
-    result = []
-    
-    for item in custom_showcase:
-        result.append({
-            "cod_product": item.cod_product,
-            "order": item.order,
-            "name": item.name
-        })
-        
-    return result
-
-
-def serialize_vehicle_product_count(vehicles):
-    result = []
-
-    for vehicle, product_count in vehicles:
-        result.append({
-            "vehicle_name": vehicle.vehicle_name,
-            "start_year": vehicle.start_year,
-            "end_year": vehicle.end_year,
-            "vehicle_type": vehicle.vehicle_type,
-            "product_count": product_count
-        })
-
-    return result
-
-
-def serialize_seller(sellers):
-    result = []
-    
-    for seller in sellers:
-        result.append({
-            "id": seller.id,
-            "name": seller.name,
-            "cnpj": seller.cnpj
-        })
-    
-    return result
-
-
-def serialize_one_seller(seller):
-    result = {
-        "id": seller.id,
-        "name": seller.name,
-        "cnpj": seller.cnpj
-    }
-    
-    return result
-
-
-def serialize_seller_showcase_items(seller_showcase_items):
-    result = []
-    
-    for item in seller_showcase_items:
-        # Get the raw images as string (JSON)
-        raw_images = item.images
-        
-        # Parse the strings
-        if isinstance(raw_images, str):
-            try:
-                parsed = json.loads(raw_images)
-                
-                images_list = parsed if isinstance(parsed, list) else []
-                
-            except json.JSONDecodeError:
-                images_list = []
-                
-        else:
-            images_list = raw_images
-            
-        images = []
-        
-        # Normalize each entry to a dict with the url
-        for img in images_list:
-            if isinstance(img, dict) and "url" in img:
-                images.append(img["url"])
-                
-            elif isinstance(img, str):
-                images.append(img)
-                
-            else:
-                continue
-        
-        result.append({
-            "order": item.order,
-            "label": item.label,
-            "cod_product": item.cod_product,
-            "name_product": item.name_product,
-            "bar_code": item.bar_code,
-            "gear_quantity": item.gear_quantity,
-            "cross_reference": item.cross_reference,
-            "hash_category": item.hash_category,
-            "gear_dimensions": item.gear_dimensions,
-            "description": item.description,
-            "is_active": item.is_active,
-            "is_manufactured": item.is_manufactured,
-            "images": images
-        })
-        
-    return result
-
-
-def serialize_meta_pagination(total, pages, page, per_page):
-
-    return {
-        "total_items": total,
-        "total_pages": pages,
-        "current_page": page,
-        "per_page": per_page
-    }
