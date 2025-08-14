@@ -851,6 +851,13 @@ def create_one_product_with_category_and_compatibilty():
 
 @product_bp.route("/create-product-compatibility", methods=["POST"])
 def create_product_and_compatibilty():
+    id_seller = request.args.get("id_seller", type=int)
+    
+    if not id_seller:
+        return jsonify({
+            "message": "Não foi oferecido um id do seller para cadastrar o produto"
+        }, 400)
+    
     name_product = request.form.get("name")
     cod_product = request.form.get("cod_product")
     bar_code = request.form.get("bar_code")
@@ -862,7 +869,6 @@ def create_product_and_compatibilty():
     description = request.form.get("description")
     images = request.files.getlist("images")
 
-    id_seller = request.args.get("id_seller", type=int)
     compatibilities_array = request.form.get("compatibilities")
     compatibilities = json.loads(compatibilities_array) if compatibilities_array else []
 
@@ -888,31 +894,32 @@ def create_product_and_compatibilty():
                 hash_category=hash_category
             ))
 
-        for comp in compatibilities:
-            vehicle_name = comp["vehicle_name"]
+        if len(compatibilities) == 0:
+            for comp in compatibilities:
+                vehicle_name = comp["vehicle_name"]
 
-            if not Compatibility.query.get((cod_product, vehicle_name)):
-                db.session.add(Compatibility(
-                    cod_product=cod_product,
-                    vehicle_name=vehicle_name
-                ))
+                if not Compatibility.query.get((cod_product, vehicle_name)):
+                    db.session.add(Compatibility(
+                        cod_product=cod_product,
+                        vehicle_name=vehicle_name
+                    ))
 
-            hash_brand = ""
-            check_vehicle = Vehicle.query.get(vehicle_name)
-            if check_vehicle:
-                hash_brand = check_vehicle.hash_brand
-                
-            if hash_brand and not SellerBrands.query.get((id_seller, hash_brand)):
-                db.session.add(SellerBrands(
-                    id_seller=id_seller,
-                    hash_brand=hash_brand
-                ))
+                hash_brand = ""
+                check_vehicle = Vehicle.query.get(vehicle_name)
+                if check_vehicle:
+                    hash_brand = check_vehicle.hash_brand
+                    
+                if hash_brand and not SellerBrands.query.get((id_seller, hash_brand)):
+                    db.session.add(SellerBrands(
+                        id_seller=id_seller,
+                        hash_brand=hash_brand
+                    ))
 
-            if not SellerVehicles.query.get((id_seller, vehicle_name)):
-                db.session.add(SellerVehicles(
-                    id_seller=id_seller,
-                    vehicle_name=vehicle_name
-                ))
+                if not SellerVehicles.query.get((id_seller, vehicle_name)):
+                    db.session.add(SellerVehicles(
+                        id_seller=id_seller,
+                        vehicle_name=vehicle_name
+                    ))
 
         s3 = S3ClientSingleton()
         
@@ -950,8 +957,9 @@ def create_product_and_compatibilty():
         }
 
         db.session.commit()
+        
         return jsonify({
-            "content": "produto cadastrado com sucesso!",
+            "message": "produto cadastrado com sucesso!",
             "product": product_dict
         }), 201
 
