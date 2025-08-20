@@ -28,7 +28,7 @@ def register(id_seller):
     existing_user = User.query.filter_by(email=email).first()
 
     if existing_user:
-        return jsonify({"message": "O email já está em uso", "user": existing_user.serialize()}), 400
+        return jsonify({"message": "O email já está em uso"}), 400
 
     # Hash the user password before storing
     new_user = User(
