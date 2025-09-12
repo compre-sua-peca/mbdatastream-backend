@@ -109,6 +109,13 @@ def serialize_brand(brands):
 
     return result
 
+def serialize_manufacturer(manufacturer):
+    return {
+        "id": manufacturer.id,
+        "name": manufacturer.name,
+        "description": manufacturer.description or "",
+        "order": manufacturer.order
+    }
 
 def serialize_category(categories):
     result = []

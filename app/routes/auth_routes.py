@@ -5,7 +5,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask_jwt_extended import create_access_token, jwt_required, get_jwt_identity
 from app.extensions import db
 from app.middleware.api_token import require_api_key
-from app.models import User, SellerUsers
+from app.models import User, User_seller
 from app.utils.functions import serialize_meta_pagination, serialize_users
 
 
@@ -42,7 +42,7 @@ def register(id_seller):
     db.session.add(new_user)
     db.session.flush()
     
-    user_seller = SellerUsers(
+    user_seller = User_seller(
         id_seller=id_seller,
         id_user=new_user.id
     )
@@ -102,8 +102,8 @@ def get_seller_users(id_seller):
     
     query = (
         db.session.query(User)
-            .join(SellerUsers, SellerUsers.id_user == User.id)
-            .filter(SellerUsers.id_seller == id_seller)
+            .join(User_seller, User_seller.id_user == User.id)
+            .filter(User_seller.id_seller == id_seller)
     )
     
     total = db.session.query(func.count()).select_from(
