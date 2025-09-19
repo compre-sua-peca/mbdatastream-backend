@@ -958,4 +958,22 @@ def create_product_and_compatibilty():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Erro ao popular o banco: {e}"}), 400
-    
+
+
+@product_bp.route("delete-images", methods=["DELETE"])
+@require_api_key
+def delete_images(images: list):
+    for images in images:
+        try:
+            image = Images.query.filter_by(id_image=images).first()
+            if image:
+                db.session.delete(image)
+                db.session.commit()
+                return jsonify({"message": "Imagem deletada com sucesso"}), 200
+            else:
+                return jsonify({"message": "Imagem não encontrada"}), 404
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Erro ao deletar a imagem: {str(e)}"}), 500
+        finally:
+            db.session.close()
