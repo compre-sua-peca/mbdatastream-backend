@@ -917,12 +917,12 @@ def create_product_and_compatibilty():
         s3 = S3ClientSingleton()
         
         urls = []
-        for img in images:
+        for idx, img in enumerate(images):
             url = s3.upload_to_s3(image=img)
 
             db.session.add(Images(
                 cod_product=cod_product,
-                id_image=name_product,
+                id_image=name_product + f"_{idx}",
                 url=url
             ))
             urls.append(url)
