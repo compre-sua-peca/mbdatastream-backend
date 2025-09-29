@@ -307,6 +307,7 @@ def delete_vehicle(vehicle_name):
 
 
 @vehicle_bp.route("/create-compat", methods=["POST"])
+@require_api_key
 def create_vehicle_compatibility():
 
     vehicle_payload = request.get_json()
@@ -371,6 +372,7 @@ def create_vehicle_compatibility():
         return jsonify({"message": "Compatibilidade adicionada com sucesso!"}), 201 
     
 @vehicle_bp.route("/create-brand-vehicle", methods=["POST"])
+@require_api_key
 def create_vehicle_by_xlsx(file):
     hash_generator = HashGenerator()
     try:
