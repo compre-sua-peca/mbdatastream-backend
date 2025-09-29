@@ -2,8 +2,10 @@ from flask import Blueprint, jsonify, request
 from sqlalchemy import func
 from sqlalchemy.exc import SQLAlchemyError
 from app.middleware.api_token import require_api_key
+from app.dal.encryptor import HashGenerator
 from app.models import Compatibility, Product, SellerVehicles, Vehicle, VehicleBrand
 from app.extensions import db
+import pandas as pd
 from app.utils.functions import serialize_meta_pagination, serialize_vehicle_product_count
 
 
@@ -367,3 +369,47 @@ def create_vehicle_compatibility():
         
     else:
         return jsonify({"message": "Compatibilidade adicionada com sucesso!"}), 201 
+    
+@vehicle_bp.route("/create-brand-vehicle", methods=["POST"])
+def create_vehicle_by_xlsx(file):
+    hash_generator = HashGenerator()
+    try:
+        df = pd.read_excel(file)
+        for idx, row in df.iterrows():
+            vehicle_name = str(row['car_model']).strip()
+            brand_name = str(row['brand']).strip()
+            year = str(row['year']).strip()
+
+            brand_obj = VehicleBrand.query.filter_by(brand_name=brand_name).first()
+
+            if not brand_obj:
+                hash_brand = hash_generator.generate_hash(brand_name)
+                brand_obj = VehicleBrand(
+                    hash_brand=hash_brand,
+                    brand_name=brand_name,
+                    brand_image=None,
+                    display_order=0
+                )
+                db.session.add(brand_obj)
+                db.session.flush()
+
+            hash_brand = brand_obj.hash_brand
+
+            vehicle_obj = Vehicle.query.filter_by(vehicle_name=vehicle_name).first()
+
+            if not vehicle_obj:
+                vehicle = Vehicle(
+                    vehicle_name=vehicle_name,
+                    start_year=year,
+                    end_year=year,
+                    vehicle_type="CARRO",
+                    hash_brand=hash_brand
+                )
+                db.session.add(vehicle)
+
+        db.session.commit()
+        return jsonify({"message": "Veículos importados com sucesso!"}), 201
+
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"error": str(e)}), 500
