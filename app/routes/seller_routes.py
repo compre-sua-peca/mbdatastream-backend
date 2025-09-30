@@ -2,6 +2,7 @@ from flask import Blueprint, Response, json, jsonify, request
 from app.dal.dynamo_client import DynamoSingleton
 from app.middleware.api_token import require_api_key
 from app.models import Product
+from app.services.seller_db_service import get_one_db_seller
 from app.services.seller_db_service import get_all_labeled_custom_showcases, get_all_labels
 from app.utils.functions import serialize_label, serialize_products
 
@@ -9,9 +10,25 @@ from app.utils.functions import serialize_label, serialize_products
 seller_bp = Blueprint("sellers", __name__)
 
 
+@seller_bp.route("/by-id/<string:id_seller>", methods=["GET"])
+@require_api_key
+def get_seller_info_by_id(id_seller):
+    db_seller = get_one_db_seller(id_seller)
+    
+    dynamo_client = DynamoSingleton()
+    
+    table = "CatalogSellers"
+    key_name = "seller_domain"
+    key_value = db_seller.seller_domain
+    
+    seller = dynamo_client.get_item_by_hash_key(table, key_name, key_value)
+    
+    return jsonify(seller), 200
+
+
 @seller_bp.route("/<string:seller_domain>", methods=["GET"])
 @require_api_key
-def get_seller_info(seller_domain):
+def get_seller_info_by_domain(seller_domain):
     dynamo_client = DynamoSingleton()
     
     table = "CatalogSellers"
