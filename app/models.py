@@ -21,6 +21,7 @@ class Product(db.Model):
     bar_code = db.Column(db.BigInteger, nullable=True)
     gear_quantity = db.Column(db.Integer, nullable=True)
     gear_dimensions = db.Column(db.String(255), nullable=True)
+    oem = db.Column(db.String(100), nullable=True)
     cross_reference = db.Column(db.String(2500), nullable=True)
     hash_category = db.Column(db.String(255), db.ForeignKey(
         'category.hash_category', onupdate="CASCADE", ondelete="CASCADE"
