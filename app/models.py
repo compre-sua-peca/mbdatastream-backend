@@ -21,6 +21,7 @@ class Product(db.Model):
     bar_code = db.Column(db.BigInteger, nullable=True)
     gear_quantity = db.Column(db.Integer, nullable=True)
     gear_dimensions = db.Column(db.String(255), nullable=True)
+    oem = db.Column(db.String(100), nullable=True)
     cross_reference = db.Column(db.String(2500), nullable=True)
     hash_category = db.Column(db.String(255), db.ForeignKey(
         'category.hash_category', onupdate="CASCADE", ondelete="CASCADE"
@@ -28,14 +29,29 @@ class Product(db.Model):
     id_seller = db.Column(db.Integer, db.ForeignKey(
         'seller.id', onupdate="CASCADE", ondelete="CASCADE"
     ), nullable=True)
+    id_manufacturer = db.Column(db.Integer, db.ForeignKey(
+      'manufacturer.id', onupdate="CASCADE", ondelete="CASCADE"
+    ), nullable=True)
 
     images = db.relationship('Images', backref='product', lazy=True, cascade="all" )
     compatibilities = db.relationship(
         'Compatibility', backref='product', lazy=True)
+    manufacturers = db.relationship(
+        'Manufacturer', backref='product', lazy=True)
+
 
     def __repr__(self):
         return f"Product('{self.cod_product}', '{self.name_product}', '{self.bar_code}', '{self.gear_quantity}', '{self.gear_dimensions}', '{self.cross_reference}', '{self.hash_category}')"
 
+class Manufacturer(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(150), nullable=False)
+    description = db.Column(db.String(200), nullable=True)
+    order = db.Column(db.Integer, nullable=False)
+
+class SellerManufacturer(db.Model):
+    id_seller = db.Column(db.Integer, primary_key=True)
+    id_manufacturer = db.Column(db.Integer, primary_key=True)
 
 class Images(db.Model):
     __tablename__ = "images"
@@ -109,7 +125,6 @@ class User(db.Model):
             "username": self.username,
             "email": self.email
         }
-
 
 class SellerUsers(db.Model):
     __tablename__ = 'seller_users'
