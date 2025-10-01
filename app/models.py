@@ -138,7 +138,7 @@ class Seller(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(75), unique=True, nullable=False)
     cnpj = db.Column(db.String(20), unique=True, nullable=False)
- 
+    seller_domain = db.Column(db.String(15), nullable=False, default="")
  
 class SellerVehicles(db.Model):
     id_seller = db.Column(db.Integer, db.ForeignKey(
