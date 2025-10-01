@@ -43,9 +43,6 @@ def upgrade():
         batch_op.add_column(sa.Column('id_manufacturer', sa.Integer(), nullable=True))
         batch_op.create_foreign_key(None, 'manufacturer', ['id_manufacturer'], ['id'], onupdate='CASCADE', ondelete='CASCADE')
 
-    with op.batch_alter_table('seller', schema=None) as batch_op:
-        batch_op.drop_column('seller_domain')
-
     # ### end Alembic commands ###
 
 
