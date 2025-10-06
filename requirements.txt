@@ -1,4 +1,4 @@
-aiofiles==24.1.0
+Daiofiles==24.1.0
 aiomysql==0.2.0
 alembic==1.15.1
 asyncpg==0.30.0
