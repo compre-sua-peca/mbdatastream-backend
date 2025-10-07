@@ -116,8 +116,6 @@ def get_products_by_category(hash_category):
 
     products = serialize_products(pagination.items)
 
-    print(products)
-
     meta = serialize_meta_pagination(
         pagination.total,
         pagination.pages,
@@ -494,7 +492,13 @@ def get_product(cod_product):
 
     category_name = product.category.name_category if product.category else None
 
-    image_urls = [image.url for image in product.images]
+    images = [
+        {
+            "id_image": image.id_image,
+            "url": image.url
+        }
+    for image in product.images
+    ]
 
     compatibility = [{"vehicle_name": comp.vehicle_name}
                      for comp in product.compatibilities]
@@ -510,7 +514,7 @@ def get_product(cod_product):
         "gear_dimensions": product.gear_dimensions,
         "cross_reference": product.cross_reference,
         "category": category_name,
-        "images": image_urls,
+        "images": images,
         "compatibilities": compatibility
     }
 
@@ -520,25 +524,53 @@ def get_product(cod_product):
 @product_bp.route("/<string:cod_product>", methods=["PUT"])
 @require_api_key
 def update_product(cod_product):
-    product = Product.query.filter_by(cod_product=cod_product).first()
-    if not product:
-        return jsonify({"message": "Produto não encontrado"}), 404
+    try:
+        product = Product.query.filter_by(cod_product=cod_product).first()
+        if not product:
+            return jsonify({"message": "Produto não encontrado"}), 404
 
-    data = request.get_json() or {}
+        product.name_product    = request.form.get("name_product",    product.name_product)
+        product.description     = request.form.get("description",     product.description)
+        is_manufactured_str     = request.form.get("is_manufactured", product.is_manufactured)
+        if isinstance(is_manufactured_str, str):
+            if is_manufactured_str.strip().lower() == "true":
+                product.is_manufactured = True
+            elif is_manufactured_str.strip().lower() == "false":
+                product.is_manufactured = False
+            else:
+                product.is_manufactured = bool(is_manufactured_str)
+        else:
+            product.is_manufactured = bool(is_manufactured_str)
+        product.bar_code        = request.form.get("bar_code",        product.bar_code)
+        product.gear_quantity   = request.form.get("gear_quantity",   product.gear_quantity)
+        product.gear_dimensions = request.form.get("gear_dimensions", product.gear_dimensions)
+        product.cross_reference = request.form.get("cross_reference", product.cross_reference)
+        product.hash_category   = request.form.get("hash_category",   product.hash_category)
 
-    product.name_product    = data.get("name_product",    product.name_product)
-    product.description     = data.get("description",     product.description)
-    product.is_manufactured = data.get("is_manufactured", product.is_manufactured)
-    product.bar_code        = data.get("bar_code",        product.bar_code)
-    product.gear_quantity   = data.get("gear_quantity",   product.gear_quantity)
-    product.gear_dimensions = data.get("gear_dimensions", product.gear_dimensions)
-    product.cross_reference = data.get("cross_reference", product.cross_reference)
-    product.hash_category   = data.get("hash_category",   product.hash_category)
-
-    db.session.commit()
-    return jsonify({"message": "Produto atualizado com sucesso"}), 200
+        s3 = S3ClientSingleton()
+        images = request.files.getlist("images")
 
 
+        print(product.is_manufactured)
+        for idx, img in enumerate(images):
+            print(img)
+            print("o index dessa nova imagem é:", idx)
+            url = s3.upload_to_s3(image=img)
+            id_image = f"{cod_product}-{img.filename}"
+            print("o id_image dessa nova nova imagem é:", id_image)
+            db.session.add(Images(
+                cod_product=cod_product,
+                id_image=id_image,
+                url=url
+            ))
+        db.session.commit()
+        return jsonify({"message": "Produto atualizado com sucesso"}), 200
+    except Exception as e:
+        print(e)
+        db.session.rollback()
+        return jsonify({"error": f"Erro ao atualizar produto: {e}"}), 500
+    finally:
+        db.session.close()
 
 @product_bp.route("/upload-product-images-by-folder", methods=["POST"])
 @require_api_key
@@ -924,12 +956,12 @@ def create_product_and_compatibilty():
         s3 = S3ClientSingleton()
         
         urls = []
-        for img in images:
+        for idx, img in enumerate(images):
             url = s3.upload_to_s3(image=img)
 
             db.session.add(Images(
                 cod_product=cod_product,
-                id_image=name_product,
+                id_image=name_product + f"_{idx}",
                 url=url
             ))
             urls.append(url)
@@ -966,4 +998,32 @@ def create_product_and_compatibilty():
     except Exception as e:
         db.session.rollback()
         return jsonify({"error": f"Erro ao popular o banco: {e}"}), 400
-    
+
+
+@product_bp.route("delete-images", methods=["DELETE"])
+@require_api_key
+def delete_images():
+    data = request.get_json()
+    images = data.get("images", [])
+
+    print("Imagens recebidas:", images)
+
+    deleted = []
+
+    for img_id in images:
+        try:
+            image = Images.query.filter_by(id_image=img_id).first()
+            if image:
+                db.session.delete(image)
+                db.session.commit()
+                deleted.append(img_id)
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({"error": f"Erro ao deletar a imagem {img_id}: {str(e)}"}), 500
+        finally:
+            db.session.close()
+
+    return jsonify({
+        "deleted": deleted,
+        "message": "Processamento concluído"
+    }), 200
