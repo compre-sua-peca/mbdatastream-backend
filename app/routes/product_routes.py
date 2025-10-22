@@ -255,7 +255,12 @@ def get_by_compatibility(vehicle_name):
     if not product_ids:
         return jsonify({
             "products": [],
-            "meta": {}
+            "meta": {
+                "current_page": 1,
+                "per_page" : per_page,
+                "total_pages": 0,
+                "total_items": 0
+            }
         }), 200
 
     # Then get full details for these products, including all images
