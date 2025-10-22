@@ -505,13 +505,7 @@ def get_product(cod_product):
 
     category_name = product.category.name_category if product.category else None
 
-    images = [
-        {
-            "id_image": image.id_image,
-            "url": image.url
-        }
-        for image in product.images
-    ]
+    images = [img.url for img in product.images]
 
     compatibility = [{"vehicle_name": comp.vehicle_name}
                      for comp in product.compatibilities]
