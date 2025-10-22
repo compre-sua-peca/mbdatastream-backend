@@ -136,6 +136,7 @@ def search_product(search_term):
     per_page = request.args.get("per_page", 16, type=int)
     is_manufactured_str = request.args.get("is_manufactured")
     id_seller = request.args.get("id_seller")
+    exact = request.args.get("exact", "false").lower() == "true"
 
     is_manufactured = None
     if is_manufactured_str is not None:
@@ -149,27 +150,55 @@ def search_product(search_term):
     pagination = None
 
     if is_manufactured is None:
-        pagination = Product.query.filter(
-            or_(
-                Product.cod_product.ilike(f"%{transformed_search_term}%") |
-                Product.name_product.ilike(f"%{transformed_search_term}%") |
-                Product.cross_reference.ilike(f"%{transformed_search_term}%") |
-                Product.bar_code.ilike(f"%{transformed_search_term}%")
-            ),
-            Product.id_seller == id_seller
-        ).paginate(page=page, per_page=per_page, error_out=False)
+        if exact:
+            pagination = Product.query.filter(
+                or_(
+                    Product.cod_product.ilike(f"{transformed_search_term}"),
+                    Product.name_product.ilike(f"{transformed_search_term}"),
+                    Product.cross_reference.ilike(
+                        f"{transformed_search_term}"),
+                    Product.bar_code.ilike(f"{transformed_search_term}")
+                ),
+                Product.id_seller == id_seller
+            ).paginate(page=page, per_page=per_page, error_out=False)
+
+        else:
+            pagination = Product.query.filter(
+                or_(
+                    Product.cod_product.ilike(f"%{transformed_search_term}%"),
+                    Product.name_product.ilike(f"%{transformed_search_term}%"),
+                    Product.cross_reference.ilike(
+                        f"%{transformed_search_term}%"),
+                    Product.bar_code.ilike(f"%{transformed_search_term}%")
+                ),
+                Product.id_seller == id_seller
+            ).paginate(page=page, per_page=per_page, error_out=False)
 
     else:
-        pagination = Product.query.filter(
-            or_(
-                Product.cod_product.ilike(f"%{transformed_search_term}%"),
-                Product.name_product.ilike(f"%{transformed_search_term}%"),
-                Product.cross_reference.ilike(f"%{transformed_search_term}%"),
-                Product.bar_code.ilike(f"%{transformed_search_term}%"),
-            ),
-            Product.is_manufactured == is_manufactured,
-            Product.id_seller == id_seller
-        ).paginate(page=page, per_page=per_page, error_out=False)
+        if exact:
+            pagination = Product.query.filter(
+                or_(
+                    Product.cod_product.ilike(f"{transformed_search_term}"),
+                    Product.name_product.ilike(f"{transformed_search_term}"),
+                    Product.cross_reference.ilike(
+                        f"{transformed_search_term}"),
+                    Product.bar_code.ilike(f"{transformed_search_term}")
+                ),
+                Product.is_manufactured == is_manufactured,
+                Product.id_seller == id_seller
+            ).paginate(page=page, per_page=per_page, error_out=False)
+        else:
+            pagination = Product.query.filter(
+                or_(
+                    Product.cod_product.ilike(f"%{transformed_search_term}%"),
+                    Product.name_product.ilike(f"%{transformed_search_term}%"),
+                    Product.cross_reference.ilike(
+                        f"%{transformed_search_term}%"),
+                    Product.bar_code.ilike(f"%{transformed_search_term}%"),
+                ),
+                Product.is_manufactured == is_manufactured,
+                Product.id_seller == id_seller
+            ).paginate(page=page, per_page=per_page, error_out=False)
 
     filtered_products = serialize_products(pagination.items)
 
@@ -192,6 +221,7 @@ def get_by_compatibility(vehicle_name):
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 16, type=int)
     id_seller = request.args.get("id_seller", type=int)
+    exact = request.args.get("exact", "false").lower() == "true"
     offset = (page - 1) * per_page
 
     if not vehicle_name:
@@ -212,7 +242,7 @@ def get_by_compatibility(vehicle_name):
     product_ids_result = db.session.execute(
         product_ids_sql,
         {
-            "vehicle_pattern": f"%{upper_vehicle_name}%",
+            "vehicle_pattern": f"%{upper_vehicle_name}%" if exact == False else f"{upper_vehicle_name}",
             "id_seller": id_seller,
             "limit": per_page,
             "offset": offset
@@ -223,34 +253,9 @@ def get_by_compatibility(vehicle_name):
 
     # If no products found, return empty result
     if not product_ids:
-        # Get total for pagination
-        count_sql = text("""
-            SELECT COUNT(DISTINCT p.cod_product) as total
-            FROM product p
-            JOIN compatibility c ON p.cod_product = c.cod_product
-            JOIN vehicle v ON c.vehicle_name = v.vehicle_name
-            WHERE v.vehicle_name LIKE :vehicle_pattern
-        """)
-
-        count_result = db.session.execute(
-            count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%"}).first()
-        total = count_result.total
-
-        print(total)
-
-        # Calculate pagination metadata
-        total_pages = math.ceil(total / per_page)
-
-        meta = serialize_meta_pagination(
-            total,
-            total_pages,
-            page,
-            per_page
-        )
-
         return jsonify({
             "products": [],
-            "meta": meta
+            "meta": {}
         }), 200
 
     # Then get full details for these products, including all images
@@ -306,7 +311,10 @@ def get_by_compatibility(vehicle_name):
     """)
 
     count_result = db.session.execute(
-        count_sql, {"vehicle_pattern": f"%{upper_vehicle_name}%", "id_seller": id_seller}).first()
+        count_sql, {
+            "vehicle_pattern": f"%{upper_vehicle_name}%" if exact == False else f"{upper_vehicle_name}", 
+            "id_seller": id_seller
+        }).first()
     total = count_result.total
 
     # Calculate pagination metadata
@@ -347,7 +355,7 @@ def get_all_by_compatibility(vehicle_name):
     product_ids_result = db.session.execute(
         product_ids_sql,
         {
-            "vehicle_pattern": f"%{upper_vehicle_name}%",
+            "vehicle_pattern": f"{upper_vehicle_name}",
             "id_seller": id_seller
         }
     )
@@ -497,7 +505,7 @@ def get_product(cod_product):
             "id_image": image.id_image,
             "url": image.url
         }
-    for image in product.images
+        for image in product.images
     ]
 
     compatibility = [{"vehicle_name": comp.vehicle_name}
@@ -529,9 +537,12 @@ def update_product(cod_product):
         if not product:
             return jsonify({"message": "Produto não encontrado"}), 404
 
-        product.name_product    = request.form.get("name_product",    product.name_product)
-        product.description     = request.form.get("description",     product.description)
-        is_manufactured_str     = request.form.get("is_manufactured", product.is_manufactured)
+        product.name_product = request.form.get(
+            "name_product",    product.name_product)
+        product.description = request.form.get(
+            "description",     product.description)
+        is_manufactured_str = request.form.get(
+            "is_manufactured", product.is_manufactured)
         if isinstance(is_manufactured_str, str):
             if is_manufactured_str.strip().lower() == "true":
                 product.is_manufactured = True
@@ -541,15 +552,19 @@ def update_product(cod_product):
                 product.is_manufactured = bool(is_manufactured_str)
         else:
             product.is_manufactured = bool(is_manufactured_str)
-        product.bar_code        = request.form.get("bar_code",        product.bar_code)
-        product.gear_quantity   = request.form.get("gear_quantity",   product.gear_quantity)
-        product.gear_dimensions = request.form.get("gear_dimensions", product.gear_dimensions)
-        product.cross_reference = request.form.get("cross_reference", product.cross_reference)
-        product.hash_category   = request.form.get("hash_category",   product.hash_category)
+        product.bar_code = request.form.get(
+            "bar_code",        product.bar_code)
+        product.gear_quantity = request.form.get(
+            "gear_quantity",   product.gear_quantity)
+        product.gear_dimensions = request.form.get(
+            "gear_dimensions", product.gear_dimensions)
+        product.cross_reference = request.form.get(
+            "cross_reference", product.cross_reference)
+        product.hash_category = request.form.get(
+            "hash_category",   product.hash_category)
 
         s3 = S3ClientSingleton()
         images = request.files.getlist("images")
-
 
         print(product.is_manufactured)
         for idx, img in enumerate(images):
@@ -571,6 +586,7 @@ def update_product(cod_product):
         return jsonify({"error": f"Erro ao atualizar produto: {e}"}), 500
     finally:
         db.session.close()
+
 
 @product_bp.route("/upload-product-images-by-folder", methods=["POST"])
 @require_api_key
@@ -720,7 +736,7 @@ def delete_product(cod_product):
         # Delete all related Compatibility records
         for comp in product.compatibilities:
             db.session.delete(comp)
-            
+
         # Delete the product itself
         db.session.delete(product)
         # Commit all deletions
@@ -884,12 +900,12 @@ def create_one_product_with_category_and_compatibilty():
 @product_bp.route("/create-product-compatibility", methods=["POST"])
 def create_product_and_compatibilty():
     id_seller = request.args.get("id_seller", type=int)
-    
+
     if not id_seller:
         return jsonify({
             "message": "Não foi oferecido um id do seller para cadastrar o produto"
         }, 400)
-    
+
     name_product = request.form.get("name")
     cod_product = request.form.get("cod_product")
     bar_code = request.form.get("bar_code")
@@ -902,21 +918,22 @@ def create_product_and_compatibilty():
     images = request.files.getlist("images")
 
     compatibilities_array = request.form.get("compatibilities")
-    compatibilities = json.loads(compatibilities_array) if compatibilities_array else []
+    compatibilities = json.loads(
+        compatibilities_array) if compatibilities_array else []
 
     try:
         if not Product.query.get(cod_product):
             new_product = Product(
-                cod_product=cod_product, 
+                cod_product=cod_product,
                 name_product=name_product,
-                description=description, 
+                description=description,
                 bar_code=bar_code,
-                gear_quantity=gear_quantity, 
+                gear_quantity=gear_quantity,
                 gear_dimensions=gear_dimensions,
                 cross_reference=cross_reference,
-                hash_category=hash_category, 
+                hash_category=hash_category,
                 id_seller=id_seller,
-                is_manufactured= bool(is_manufactured)
+                is_manufactured=bool(is_manufactured)
             )
             db.session.add(new_product)
 
@@ -940,7 +957,7 @@ def create_product_and_compatibilty():
                 check_vehicle = Vehicle.query.get(vehicle_name)
                 if check_vehicle:
                     hash_brand = check_vehicle.hash_brand
-                    
+
                 if hash_brand and not SellerBrands.query.get((id_seller, hash_brand)):
                     db.session.add(SellerBrands(
                         id_seller=id_seller,
@@ -954,7 +971,7 @@ def create_product_and_compatibilty():
                     ))
 
         s3 = S3ClientSingleton()
-        
+
         urls = []
         for idx, img in enumerate(images):
             url = s3.upload_to_s3(image=img)
@@ -965,14 +982,15 @@ def create_product_and_compatibilty():
                 url=url
             ))
             urls.append(url)
-            
-        category = Category.query.filter_by(hash_category=hash_category).first()
-            
+
+        category = Category.query.filter_by(
+            hash_category=hash_category).first()
+
         serialized_category = {
             "hash_category": category.hash_category,
             "name_category": category.name_category
         }
-            
+
         product_dict = {
             "name_product": name_product,
             "cod_product": cod_product,
@@ -989,7 +1007,7 @@ def create_product_and_compatibilty():
         }
 
         db.session.commit()
-        
+
         return jsonify({
             "message": "produto cadastrado com sucesso!",
             "product": product_dict
