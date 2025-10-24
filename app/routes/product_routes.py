@@ -528,6 +528,39 @@ def get_product(cod_product):
     return jsonify(data), 200
 
 
+@product_bp.route("/with-id-url-image/<string:cod_product>", methods=["GET"])
+@require_api_key
+def get_product_with_id_url_image(cod_product):
+    product = Product.query.filter_by(cod_product=cod_product).first()
+
+    if not product:
+        return jsonify({"message": "Produto não encontrado"}), 404
+
+    category_name = product.category.name_category if product.category else None
+
+    images = [{"id_image": img.id_image, "url": img.url} for img in product.images]
+    
+    compatibility = [{"vehicle_name": comp.vehicle_name}
+                     for comp in product.compatibilities]
+
+    data = {
+        "cod_product": product.cod_product,
+        "name_product": product.name_product,
+        "description": product.description,
+        "is_active": product.is_active,
+        "is_manufactured": product.is_manufactured,
+        "bar_code": product.bar_code,
+        "gear_quantity": product.gear_quantity,
+        "gear_dimensions": product.gear_dimensions,
+        "cross_reference": product.cross_reference,
+        "category": category_name,
+        "images": images,
+        "compatibilities": compatibility
+    }
+
+    return jsonify(data), 200
+
+
 @product_bp.route("/<string:cod_product>", methods=["PUT"])
 @require_api_key
 def update_product(cod_product):
