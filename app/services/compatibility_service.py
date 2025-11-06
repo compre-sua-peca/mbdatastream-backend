@@ -8,7 +8,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from app.dal.encryptor import HashGenerator
 from app.extensions import db
-from app.models import Compatibility, Vehicle, VehicleBrand
+from app.models import Compatibility, Vehicle, VehicleBrand, SellerVehicles, SellerBrands
 
 
 class DatabaseError(Exception):
@@ -28,7 +28,10 @@ def get_compatibility_info(ids_model: list[int]):
         return jsonify({"error": e})
 
 
-def get_or_create_vehicle_brand(brand_name: str) -> VehicleBrand:
+def get_or_create_vehicle_brand(
+    brand_name: str,
+    id_seller: str
+) -> VehicleBrand:
     """Get existing VehicleBrand or create a new one. Returns the model instance."""
     if not brand_name or not isinstance(brand_name, str):
         raise ValueError("brand_name must be a non-empty string")
@@ -47,15 +50,21 @@ def get_or_create_vehicle_brand(brand_name: str) -> VehicleBrand:
             return existing_brand
 
         # 2) Create new brand (transaction context manager commits for us)
-        brand_hash = hash_generator.generate_hash(treated_brand_name)
+        hash_brand = hash_generator.generate_hash(treated_brand_name)
         new_brand = VehicleBrand(
-            hash_brand=brand_hash,
+            hash_brand=hash_brand,
             brand_name=brand_name_up,
             brand_image=None
+        )
+        
+        seller_brand = SellerBrands(
+            id_seller=id_seller,
+            hash_brand=hash_brand
         )
 
         try:
             db.session.add(new_brand)
+            db.session.add(seller_brand)
             db.session.commit()
 
             return new_brand
@@ -87,6 +96,7 @@ def get_or_create_vehicle(
     hash_brand: str,
     vehicle: Dict[str, Any],
     vehicles: list,
+    id_seller: str,
     seen_vehicles: Optional[Set[str]] = None
 ):
     treated_vehicle_name = vehicle.get("vehicle_name").upper()
@@ -114,9 +124,15 @@ def get_or_create_vehicle(
             vehicle_type=vehicle.get("vehicle_type"),
             hash_brand=hash_brand
         )
+        
+        seller_vehicle = SellerVehicles(
+            id_seller=id_seller,
+            vehicle_name=new_vehicle.vehicle_name
+        )
 
         try:
             db.session.add(new_vehicle)
+            db.session.add(seller_vehicle)
             db.session.commit()
 
             vehicles.append(vehicle)

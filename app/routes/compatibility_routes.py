@@ -5,9 +5,11 @@ from app.services.compatibility_service import get_compatibility_info, get_or_cr
 compatibility_bp = Blueprint("compatibility", __name__)
 
 
-@compatibility_bp.route("/upsert/<string:cod_product>", methods=["POST"])
+@compatibility_bp.route("/upsert/<string:cod_product>/<string:id_seller>", methods=["POST"])
 @require_api_key
-def upsert_compatibility(cod_product):
+def upsert_compatibility(cod_product, id_seller):
+    id_seller
+    
     if not request.is_json:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -26,22 +28,29 @@ def upsert_compatibility(cod_product):
     for compat in compats:
         brand_name = compat.get("brand_name")
         
-        brand = get_or_create_vehicle_brand(brand_name)
+        brand = get_or_create_vehicle_brand(brand_name, id_seller)
         hash_brand = brand.hash_brand
 
         handle_brand_compatibility(brand_name, hash_brand, seen_hash_brands, brands)
 
         years = compat.get("years")
+        
+        if years:
+            year_values = [y.get("year") for y in years if y.get("year") is not None]
+            start_year = min(year_values) if year_values else None
+            end_year = max(year_values) if year_values else None
+        else:
+            start_year = end_year = None
 
         vehicle = {
             "vehicle_name": compat.get("car_version"),
             "vehicle_type": "leve",
-            "start_year": years[0].get("year"),
-            "end_year": years[len(years) - 1].get("year"),
+            "start_year": start_year,
+            "end_year": end_year,
             "hash_brand": hash_brand
         }
         
-        get_or_create_vehicle(hash_brand, vehicle, vehicles, seen_vehicles)
+        get_or_create_vehicle(hash_brand, vehicle, vehicles, id_seller, seen_vehicles)
 
     compat_results = handle_compatibility(cod_product, vehicles)
 
