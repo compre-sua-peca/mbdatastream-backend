@@ -9,7 +9,7 @@ compatibility_bp = Blueprint("compatibility", __name__)
 @require_api_key
 def upsert_compatibility(cod_product, id_seller):
     id_seller
-    
+
     if not request.is_json:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -27,16 +27,18 @@ def upsert_compatibility(cod_product, id_seller):
 
     for compat in compats:
         brand_name = compat.get("brand_name")
-        
+
         brand = get_or_create_vehicle_brand(brand_name, id_seller)
         hash_brand = brand.hash_brand
 
-        handle_brand_compatibility(brand_name, hash_brand, seen_hash_brands, brands)
+        handle_brand_compatibility(
+            brand_name, hash_brand, seen_hash_brands, brands)
 
         years = compat.get("years")
-        
+
         if years:
-            year_values = [y.get("year") for y in years if y.get("year") is not None]
+            year_values = [y.get("year")
+                           for y in years if y.get("year") is not None]
             start_year = min(year_values) if year_values else None
             end_year = max(year_values) if year_values else None
         else:
@@ -49,16 +51,19 @@ def upsert_compatibility(cod_product, id_seller):
             "end_year": end_year,
             "hash_brand": hash_brand
         }
-        
-        get_or_create_vehicle(hash_brand, vehicle, vehicles, id_seller, seen_vehicles)
+
+        get_or_create_vehicle(hash_brand, vehicle,
+                              vehicles, id_seller, seen_vehicles)
 
     compat_results = handle_compatibility(cod_product, vehicles)
 
     return jsonify({
         "message": "Compatibilidade de catálogo processada com sucesso!",
-        "brands_processed": len(brands),
-        "vehicles_processed": len(vehicles),
-        "cod_product": cod_product,
-        "compatibilities_created": len(compat_results.get("incoming")),
-        "compatibilities_deleted": len(compat_results.get("to_delete"))
+        "statistics": {
+            "brands_processed": len(brands),
+            "vehicles_processed": len(vehicles),
+            "cod_product": cod_product,
+            "compatibilities_created": len(compat_results.get("incoming")),
+            "compatibilities_deleted": len(compat_results.get("to_delete"))
+        }
     })
