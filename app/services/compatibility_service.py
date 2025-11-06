@@ -215,8 +215,55 @@ def handle_compatibility(
         be_deleted = [kept_compat for kept_compat in kept_compats if kept_compat not in incoming_ids]
         
         if be_deleted:
-            del_stmt = delete(Compatibility).where(Compatibility.vehicle_name.in_(be_deleted))
-            db.session.execute(del_stmt)
+            # 1) get Vehicle rows for to_delete to extract hash_brands
+            v_stmt = select(Vehicle).where(Vehicle.vehicle_name.in_(be_deleted))
+            v_result = db.session.execute(v_stmt)
+            vehicles_rows = v_result.scalars().all()  # Vehicle instances
+
+            # collect unique hash_brand values associated with the vehicles being removed
+            hash_brands = {v.hash_brand for v in vehicles_rows if getattr(v, "hash_brand", None)}
+
+            # If there are brands involved, determine which brands will still have SellerVehicles
+            # after removing the seller-vehicle rows for 'be_deleted'.
+            deletable_brands = set()
+            if hash_brands:
+                # Find brands that STILL have SellerVehicles referencing ANY vehicle of that brand,
+                # excluding the vehicle_names we are about to delete.
+                # We join SellerVehicles -> Vehicle and filter by Vehicle.hash_brand in hash_brands
+                # and SellerVehicles.vehicle_name NOT IN be_deleted.
+                remaining_brands_stmt = (
+                    select(Vehicle.hash_brand)
+                    .join(SellerVehicles, SellerVehicles.vehicle_name == Vehicle.vehicle_name)
+                    .where(Vehicle.hash_brand.in_(hash_brands))
+                    .where(~SellerVehicles.vehicle_name.in_(be_deleted))
+                    .distinct()
+                )
+                rem_result = db.session.execute(remaining_brands_stmt)
+                remaining_brands = set(rem_result.scalars().all())
+
+                # brands that become unused (no remaining seller-vehicle entries) are:
+                deletable_brands = hash_brands - remaining_brands
+
+            # 2) delete SellerVehicles entries for the vehicles being removed
+            db.session.execute(
+                delete(SellerVehicles).where(SellerVehicles.vehicle_name.in_(be_deleted))
+            )
+
+            # 3) delete only the SellerBrands for brands that are safe to remove
+            if deletable_brands:
+                db.session.execute(
+                    delete(SellerBrands).where(SellerBrands.hash_brand.in_(deletable_brands))
+                )
+
+            # 4) delete Compatibility rows for these vehicle names and this product
+            db.session.execute(
+                delete(Compatibility).where(
+                    (Compatibility.cod_product == cod_product) &
+                    (Compatibility.vehicle_name.in_(be_deleted))
+                )
+            )
+
+            # commit everything once
             db.session.commit()
             
         else:

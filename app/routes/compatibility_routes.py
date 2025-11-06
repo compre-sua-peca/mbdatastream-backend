@@ -8,8 +8,6 @@ compatibility_bp = Blueprint("compatibility", __name__)
 @compatibility_bp.route("/upsert/<string:cod_product>/<string:id_seller>", methods=["POST"])
 @require_api_key
 def upsert_compatibility(cod_product, id_seller):
-    id_seller
-
     if not request.is_json:
         return jsonify({"error": "Request body must be JSON"}), 400
 
@@ -32,7 +30,11 @@ def upsert_compatibility(cod_product, id_seller):
         hash_brand = brand.hash_brand
 
         handle_brand_compatibility(
-            brand_name, hash_brand, seen_hash_brands, brands)
+            brand_name, 
+            hash_brand, 
+            seen_hash_brands, 
+            brands
+        )
 
         years = compat.get("years")
 
@@ -52,8 +54,13 @@ def upsert_compatibility(cod_product, id_seller):
             "hash_brand": hash_brand
         }
 
-        get_or_create_vehicle(hash_brand, vehicle,
-                              vehicles, id_seller, seen_vehicles)
+        get_or_create_vehicle(
+            hash_brand, 
+            vehicle,
+            vehicles, 
+            id_seller, 
+            seen_vehicles
+        )
 
     compat_results = handle_compatibility(cod_product, vehicles)
 
