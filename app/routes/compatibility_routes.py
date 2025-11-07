@@ -2,18 +2,20 @@ from flask import Blueprint, jsonify, request
 from app.middleware.api_token import require_api_key
 from app.services.compatibility_service import get_compatibility_info, get_or_create_vehicle, get_or_create_vehicle_brand, handle_brand_compatibility, handle_compatibility
 
+
 compatibility_bp = Blueprint("compatibility", __name__)
 
 
 @compatibility_bp.route("/upsert/<string:cod_product>/<string:id_seller>", methods=["POST"])
 @require_api_key
 def upsert_compatibility(cod_product, id_seller):
-    id_seller
-
     if not request.is_json:
-        return jsonify({"error": "Request body must be JSON"}), 400
+        return jsonify({"error": "Request body must have ids_model with values instead of empty"}), 400
 
     data = request.get_json()
+    
+    if len(data.get("ids_model")) < 1:
+        return jsonify({"error": "Request body must have ids_model with values instead of empty"}), 400
 
     compats = get_compatibility_info(data)
 
@@ -32,7 +34,11 @@ def upsert_compatibility(cod_product, id_seller):
         hash_brand = brand.hash_brand
 
         handle_brand_compatibility(
-            brand_name, hash_brand, seen_hash_brands, brands)
+            brand_name, 
+            hash_brand, 
+            seen_hash_brands, 
+            brands
+        )
 
         years = compat.get("years")
 
@@ -45,15 +51,20 @@ def upsert_compatibility(cod_product, id_seller):
             start_year = end_year = None
 
         vehicle = {
-            "vehicle_name": compat.get("car_version"),
+            "vehicle_name": compat.get("car_version").upper(),
             "vehicle_type": "leve",
             "start_year": start_year,
             "end_year": end_year,
             "hash_brand": hash_brand
         }
 
-        get_or_create_vehicle(hash_brand, vehicle,
-                              vehicles, id_seller, seen_vehicles)
+        get_or_create_vehicle(
+            hash_brand, 
+            vehicle,
+            vehicles, 
+            id_seller, 
+            seen_vehicles
+        )
 
     compat_results = handle_compatibility(cod_product, vehicles)
 
