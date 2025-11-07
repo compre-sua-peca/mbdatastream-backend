@@ -56,7 +56,7 @@ def get_or_create_vehicle_brand(
             brand_name=brand_name_up,
             brand_image=None
         )
-        
+
         seller_brand = SellerBrands(
             id_seller=id_seller,
             hash_brand=hash_brand
@@ -85,11 +85,9 @@ def get_or_create_vehicle_brand(
                 f"Integrity error creating brand '{brand_name_up}': {ie}") from ie
 
     except SQLAlchemyError as e:
-        logger.exception(
-            "Database error in get_or_create_vehicle_brand(%s)", brand_name_up)
+        logger.exception("Database error in get_or_create_vehicle_brand(%s)", brand_name_up)
         db.session.rollback()
-        raise DatabaseError(
-            f"DB error while getting/creating vehicle brand '{brand_name_up}': {e}") from e
+        raise DatabaseError(f"DB error while getting/creating vehicle brand '{brand_name_up}': {e}") from e
 
 
 def get_or_create_vehicle(
@@ -99,7 +97,7 @@ def get_or_create_vehicle(
     id_seller: str,
     seen_vehicles: Optional[Set[str]] = None
 ):
-    treated_vehicle_name = vehicle.get("vehicle_name").upper()
+    treated_vehicle_name = vehicle.get("vehicle_name")
 
     try:
         # Check if vehicle exists
@@ -124,7 +122,7 @@ def get_or_create_vehicle(
             vehicle_type=vehicle.get("vehicle_type"),
             hash_brand=hash_brand
         )
-        
+
         seller_vehicle = SellerVehicles(
             id_seller=id_seller,
             vehicle_name=new_vehicle.vehicle_name
@@ -145,7 +143,8 @@ def get_or_create_vehicle(
 
             # try to recover by reselecting
             stmt = select(Vehicle).where(
-                Vehicle.vehicle_name == treated_vehicle_name)
+                Vehicle.vehicle_name == treated_vehicle_name
+            )
             result = db.session.execute(stmt)
             existing_after = result.scalars().first()
             if existing_after:
@@ -187,60 +186,57 @@ def handle_compatibility(
     vehicles: list
 ):
     # vehicle_name = vehicle.get("vehicle_name")
-    
+
     try:
         stmt = select(Compatibility).where(
             Compatibility.cod_product == cod_product
         )
-        
+
         # Querying the existent compats for that product
         query = db.session.execute(stmt)
         db_compats = query.scalars().all()
-        
+
         # Existing compatibility ids stored in DB
         kept_compats = [c.vehicle_name for c in db_compats]
-        
+
         incoming_ids = []
-        
+
         for vehicle in vehicles:
             if vehicle is None:
                 continue
-            
+
             incoming_ids.append(vehicle.get("vehicle_name"))
-            
+
         # Normalizing the ids
         incoming_ids = [i for i in incoming_ids if i is not None]
-        
+
         # Take the compatibilites that aren't anymore on the database and save them to be deleted
         be_deleted = [kept_compat for kept_compat in kept_compats if kept_compat not in incoming_ids]
         
+        deletable_brands = set()
         if be_deleted:
             # 1) get Vehicle rows for to_delete to extract hash_brands
-            v_stmt = select(Vehicle).where(Vehicle.vehicle_name.in_(be_deleted))
+            v_stmt = select(Vehicle).where(
+                Vehicle.vehicle_name.in_(be_deleted))
             v_result = db.session.execute(v_stmt)
             vehicles_rows = v_result.scalars().all()  # Vehicle instances
 
             # collect unique hash_brand values associated with the vehicles being removed
-            hash_brands = {v.hash_brand for v in vehicles_rows if getattr(v, "hash_brand", None)}
-
-            # If there are brands involved, determine which brands will still have SellerVehicles
-            # after removing the seller-vehicle rows for 'be_deleted'.
-            deletable_brands = set()
+            hash_brands = {v.hash_brand for v in vehicles_rows if getattr(
+                v, "hash_brand", None)}
+            
             if hash_brands:
-                # Find brands that STILL have SellerVehicles referencing ANY vehicle of that brand,
-                # excluding the vehicle_names we are about to delete.
-                # We join SellerVehicles -> Vehicle and filter by Vehicle.hash_brand in hash_brands
-                # and SellerVehicles.vehicle_name NOT IN be_deleted.
+                # find brands that STILL have SellerVehicles after excluding the vehicles about to be deleted
                 remaining_brands_stmt = (
                     select(Vehicle.hash_brand)
-                    .join(SellerVehicles, SellerVehicles.vehicle_name == Vehicle.vehicle_name)
-                    .where(Vehicle.hash_brand.in_(hash_brands))
-                    .where(~SellerVehicles.vehicle_name.in_(be_deleted))
+                    .select_from(SellerVehicles)
+                    .join(Vehicle, SellerVehicles.vehicle_name == Vehicle.vehicle_name)
+                    .where(Vehicle.hash_brand.in_(list(hash_brands)))
+                    .where(SellerVehicles.vehicle_name.notin_(list(be_deleted)))
                     .distinct()
                 )
-                rem_result = db.session.execute(remaining_brands_stmt)
-                remaining_brands = set(rem_result.scalars().all())
-
+                remaining_brands = set(db.session.execute(remaining_brands_stmt).scalars().all() or [])
+                
                 # brands that become unused (no remaining seller-vehicle entries) are:
                 deletable_brands = hash_brands - remaining_brands
 
@@ -265,12 +261,9 @@ def handle_compatibility(
 
             # commit everything once
             db.session.commit()
-            
-        else:
-            db.session.rollback()
-            
+
         to_create = [incoming_id for incoming_id in incoming_ids if incoming_id not in kept_compats]
-        
+
         if to_create:
             for vehicle_name in to_create:
                 new_compat = Compatibility(
@@ -279,13 +272,13 @@ def handle_compatibility(
                 )
                 db.session.add(new_compat)
                 db.session.commit()
-            
+
         return {
             "kept": kept_compats,
             "incoming": to_create,
             "to_delete": be_deleted
         }
-        
+
     except SQLAlchemyError as e:
         db.session.rollback()
         raise DatabaseError(
