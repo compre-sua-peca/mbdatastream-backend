@@ -1,5 +1,6 @@
 import asyncio
 from itertools import zip_longest
+import json
 import re
 import pandas as pd
 from app.extensions import db
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.future import select
 from app.dal.encryptor import HashGenerator
+from sqlalchemy.orm import joinedload
 
 """ --------------------------------- Functions to handle product, category, compatibility and vehicles insertions on the database --------------------------------- """
 # Extract compatibilities from the compat column from Excel and tranform it in an array/list
@@ -658,3 +660,36 @@ async def create_image(
 
     # Atenção: não commitamos aqui. Quem chamou create_image deve chamar `await session.commit()`
     # após processar a linha inteira. Se ocorrer qualquer erro mais adiante, basta fazer rollback.
+
+   
+def get_all_product_data(id_seller: str):
+    """
+    Return list[Product] for given seller id, eager-loading relationships used by serializer
+    Adjust the filter if you store seller as a relationship (see notes below).
+    """
+    results = Product.query.options(
+        joinedload(Product.category),
+        joinedload(Product.images),
+        # joinedload compatibilities -> vehicle -> vehicle_brand
+        joinedload(Product.compatibilities)
+            .joinedload(Compatibility.vehicle)
+            .joinedload(Vehicle.vehicle_brand)
+    ).filter_by(id_seller=id_seller).all()   # <-- change 'seller_id' if your column is different
+
+    return results
+
+
+def transform_rows(serialized_products):
+    rows = []
+    for p in serialized_products:
+        row = {k: v for k, v in p.items() if k not in (
+            "images", "compatibilities")}
+        # store lists as JSON strings so they appear in a single cell; adjust if you prefer other formatting
+        row["images"] = json.dumps(p.get("images", []), ensure_ascii=False)
+        row["compatibilities"] = json.dumps(
+            p.get("compatibilities", []), ensure_ascii=False)
+        rows.append(row)
+        
+    df = pd.DataFrame(rows)
+
+    return df

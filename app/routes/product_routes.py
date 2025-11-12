@@ -1,15 +1,20 @@
+import io
 import json
 import math
-from flask import Blueprint, jsonify, request
+import tempfile
+import os
+import boto3
+from flask import Blueprint, jsonify, request, send_file, current_app
+import pandas as pd
 from sqlalchemy import text, or_
 from app.models import Product, Images, Category, Compatibility, Vehicle, SellerBrands, SellerVehicles, SellerCategories
 from app.middleware.api_token import require_api_key
 from app.extensions import db
-from app.services.product_service import process_excel
-import tempfile
-import os
+from app.services.product_service import get_all_product_data, process_excel, transform_rows
 from app.dal.S3_client import S3ClientSingleton
 from app.utils.functions import is_image_file, extract_existing_product_codes, serialize_products, serialize_meta_pagination
+from botocore.exceptions import BotoCoreError, ClientError
+from werkzeug.utils import secure_filename
 
 
 product_bp = Blueprint("products", __name__)
@@ -257,7 +262,7 @@ def get_by_compatibility(vehicle_name):
             "products": [],
             "meta": {
                 "current_page": 1,
-                "per_page" : per_page,
+                "per_page": per_page,
                 "total_pages": 0,
                 "total_items": 0
             }
@@ -317,7 +322,7 @@ def get_by_compatibility(vehicle_name):
 
     count_result = db.session.execute(
         count_sql, {
-            "vehicle_pattern": f"%{upper_vehicle_name}%" if exact == False else f"{upper_vehicle_name}", 
+            "vehicle_pattern": f"%{upper_vehicle_name}%" if exact == False else f"{upper_vehicle_name}",
             "id_seller": id_seller
         }).first()
     total = count_result.total
@@ -1077,3 +1082,109 @@ def delete_images():
         "deleted": deleted,
         "message": "Processamento concluído"
     }), 200
+
+
+@product_bp.route("/extract-all-xlsx/<string:id_seller>")
+@require_api_key
+def extract_database_xlsx(id_seller):
+    format = request.args.get("format")
+
+    # 1) fetch products (eager-loaded)
+    products = get_all_product_data(id_seller)
+
+    # 2) serialize
+    serialized_products = serialize_products(products)
+    
+    product_count = len(serialized_products)
+
+    # optional: if client asks for JSON instead of xlsx, return JSON
+    if format == "json":
+        return jsonify({
+            "products": serialized_products,
+            "count": product_count
+            })
+
+    # 3) create a pandas DataFrame and put compatibilities/images as JSON strings (or semicolon-separated)
+    df = transform_rows(serialized_products)
+
+    # 4) write to Excel in-memory
+    output = io.BytesIO()
+    filename = f"products_{secure_filename(id_seller)}.xlsx"
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name="products")
+    output.seek(0)
+
+    if format == "s3":
+        # read AWS config from Flask config first, fallback to env
+        aws_region = current_app.config.get(
+            "AWS_REGION") or os.getenv("AWS_REGION")
+        aws_bucket = current_app.config.get(
+            "AWS_XLSX_BUCKET_NAME") or os.getenv("AWS_XLSX_BUCKET_NAME")
+        # boto3 will also pick up creds from env or instance profile if not explicitly provided
+        s3_client = boto3.client(
+            "s3",
+            region_name=aws_region or None,
+            aws_access_key_id=current_app.config.get(
+                "AWS_ACCESS_KEY_ID") or os.getenv("AWS_ACCESS_KEY_ID"),
+            aws_secret_access_key=current_app.config.get(
+                "AWS_SECRET_ACCESS_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY"),
+        )
+
+        if not aws_bucket:
+            return jsonify({"error": "S3 bucket not configured (AWS_S3_BUCKET)"}), 500
+
+        # optional: include seller id and timestamp in object key to avoid collisions
+        import datetime
+        now = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+        object_key = f"exports/{secure_filename(id_seller)}/{now}_{filename}"
+
+        try:
+            # upload_fileobj will stream the BytesIO to S3
+            # reset buffer pointer just in case
+            output.seek(0)
+            s3_client.upload_fileobj(
+                Fileobj=output,
+                Bucket=aws_bucket,
+                Key=object_key,
+                ExtraArgs={
+                    "ContentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    # "ACL": "private"  # default is private; set to 'public-read' only if you intend public files
+                }
+            )
+        except (BotoCoreError, ClientError) as e:
+            current_app.logger.exception("S3 upload failed")
+            return jsonify({"error": "failed to upload file to s3", "details": str(e)}), 500
+
+        # generate a presigned URL for GET (default expiry 1 hour). Adjust ExpiresIn if you want longer.
+        presign_expires = int(request.args.get("expires", 3600))
+        try:
+            presigned_url = s3_client.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": aws_bucket, "Key": object_key},
+                ExpiresIn=presign_expires
+            )
+        except (BotoCoreError, ClientError) as e:
+            current_app.logger.exception("Failed to create presigned URL")
+            # As a fallback, return the S3 object key (caller can build an internal link)
+            return jsonify({
+                "error": "uploaded but failed to generate presigned url",
+                "s3_key": object_key,
+                "count": product_count
+            }), 500
+
+        return jsonify({
+            "s3_url": presigned_url,
+            "s3_key": object_key,
+            "bucket": aws_bucket,
+            "count": product_count,
+            "expires_in": presign_expires
+        })
+
+    # 5) send file
+    # Flask >=2.0: use download_name; older Flask uses attachment_filename
+    return send_file(
+        output,
+        as_attachment=True,
+        download_name=f"products_{id_seller}.xlsx",
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
