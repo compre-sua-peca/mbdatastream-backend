@@ -18,6 +18,7 @@ def create_seller():
 
     name = data.get("name")
     cnpj = data.get("cnpj")
+    seller_domain = data.get("seller_domain", "")
 
     try:
         existing_seller = get_one_db_seller_by_name(name)
@@ -27,7 +28,8 @@ def create_seller():
 
         new_seller = Seller(
             name=name,
-            cnpj=cnpj
+            cnpj=cnpj,
+            seller_domain=seller_domain
         )
 
         db.session.add(new_seller)
