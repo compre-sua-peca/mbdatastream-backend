@@ -15,7 +15,7 @@ class Category(db.Model):
 class Product(db.Model):
     cod_product = db.Column(db.String(255), primary_key=True)
     name_product = db.Column(db.String(255), nullable=False)
-    description = db.Column(db.String(2500), nullable=False)
+    description = db.Column(db.Text, nullable=False)
     is_active = db.Column(db.Boolean, default=True)
     is_manufactured = db.Column(db.Boolean, default=True)
     bar_code = db.Column(db.BigInteger, nullable=True)
