@@ -153,6 +153,20 @@ def serialize_custom_showcase(custom_showcase):
     return result
 
 
+def serialize_vehicle_product(vehicles):
+    result = []
+
+    for vehicle in vehicles:
+        result.append({
+            "vehicle_name": vehicle.vehicle_name,
+            "start_year": vehicle.start_year,
+            "end_year": vehicle.end_year,
+            "vehicle_type": vehicle.vehicle_type
+        })
+
+    return result
+
+
 def serialize_vehicle_product_count(vehicles):
     result = []
 
