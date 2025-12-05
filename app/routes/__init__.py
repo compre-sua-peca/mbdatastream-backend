@@ -7,6 +7,7 @@ from .auth_routes import auth_bp
 from .seller_db_routes import seller_db_bp
 from .manufacturer_routes import manufacturer_bp
 from .compatibility_routes import compatibility_bp
+from .sitemap_routes import sitemap_bp
 
 def register_routes(app):
     app.register_blueprint(product_bp, url_prefix="/product")
@@ -18,3 +19,4 @@ def register_routes(app):
     app.register_blueprint(seller_db_bp, url_prefix="/seller-db")
     app.register_blueprint(manufacturer_bp, url_prefix="/manufacturer")
     app.register_blueprint(compatibility_bp, url_prefix="/compatibility")
+    app.register_blueprint(sitemap_bp, url_prefix="/sitemap")
